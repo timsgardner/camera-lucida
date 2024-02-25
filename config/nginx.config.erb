@@ -8,7 +8,7 @@ http {
         server_name localhost;
 
         location / {
-            root /app/public;
+            root /app; # Adjusted from /app/public to /app
             index index.html index.htm;
             try_files $uri $uri/ =404;
         }
