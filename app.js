@@ -45,10 +45,15 @@ function updateCanvas() {
 }
 
 async function setupCamera() {
-  const video = document.getElementById("videoFeed"); // Reference existing video element
+  const constraints = {
+    video: {
+      facingMode: { exact: "environment" }, // This attempts to select the rear camera on mobile devices
+    },
+  };
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const video = document.getElementById("videoFeed");
     video.srcObject = stream;
     video.addEventListener("loadedmetadata", () => {
       video.play();
