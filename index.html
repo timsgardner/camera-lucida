@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Camera Lucida App</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="controls">
+      <input type="file" accept="image/*" id="imageInput" />
+      <label for="transparencySlider">Transparency:</label>
+      <input
+        type="range"
+        id="transparencySlider"
+        min="0"
+        max="1"
+        step="0.01"
+        value="0.5"
+      />
+      <label for="invertColorsToggle">Invert Colors:</label>
+      <input type="checkbox" id="invertColorsToggle" />
+      <button id="startCameraButton">Start Camera</button>
+    </div>
+
+    <!-- Image display container for video and canvas -->
+    <div id="imageDisplayContainer">
+      <video id="videoFeed" playsinline autoplay muted></video>
+      <canvas id="overlayCanvas"></canvas>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

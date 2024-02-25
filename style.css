@@ -1,0 +1,36 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  align-items: center;
+  padding: 10px;
+  background-color: #f0f0f0;
+  width: 100%;
+}
+
+#imageDisplayContainer {
+  position: relative; /* Establishes a stacking context */
+  width: 100%;
+}
+
+video, canvas {
+  width: 100%; /* Ensures both video and canvas fill the container */
+  display: block; /* Removes default margins/padding */
+}
+
+#videoFeed {
+  height: auto; /* Adjust height automatically to maintain aspect ratio */
+}
+
+#overlayCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none; /* Allows interaction with the video beneath */
+}
