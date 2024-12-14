@@ -28,48 +28,50 @@ document
 
 let originalImage = null; // Global variable to store the original image
 
+function fitToBounds(innerWidth, innerHeight, outerWidth, outerHeight) {
+  const innerAspect = innerWidth / innerHeight;
+  const outerAspect = outerWidth / outerHeight;
+
+  let targetWidth, targetHeight;
+  if (innerAspect > outerAspect) {
+    // Image is wider than the container
+    targetWidth = outerWidth;
+    targetHeight = outerWidth / innerAspect;
+  } else {
+    // Image is taller than the container
+    targetHeight = outerHeight;
+    targetWidth = outerHeight * innerAspect;
+  }
+
+  return { targetWidth, targetHeight };
+}
+
+
 function loadImage(url) {
   const img = new Image();
   img.onload = function () {
+    originalImage = { img }; // Save the uploaded image
+
     const canvas = document.getElementById("overlayCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const video = document.getElementById("videoFeed");
 
-    // Clear the canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Calculate image dimensions to fit within the canvas without distortion
-    const canvasAspect = canvas.width / canvas.height;
-    const imageAspect = img.width / img.height;
-
-    let drawWidth, drawHeight;
-    if (imageAspect > canvasAspect) {
-      drawWidth = canvas.width;
-      drawHeight = canvas.width / imageAspect;
+    // Determine canvas dimensions
+    if (video.videoWidth && video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
     } else {
-      drawHeight = canvas.height;
-      drawWidth = canvas.height * imageAspect;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     }
 
-    // Center the image in the canvas
-    const offsetX = (canvas.width - drawWidth) / 2;
-    const offsetY = (canvas.height - drawHeight) / 2;
-
-    // Draw the image onto the canvas
-    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-
-    // Save the image as the original reference
-    originalImage = { img, drawWidth, drawHeight, offsetX, offsetY };
-
-    // Apply filters (transparency, invert colors, etc.)
+    // Redraw the canvas with the loaded image
     updateCanvas();
   };
   img.src = url;
 }
 
 function updateCanvas() {
-  const transparency = parseFloat(document.getElementById("transparencySlider").value); // Parse as float
+  const transparency = parseFloat(document.getElementById("transparencySlider").value);
   const invert = document.getElementById("invertColorsToggle").checked;
   const alphaMask = document.getElementById("alphaMaskToggle").checked;
 
@@ -81,37 +83,46 @@ function updateCanvas() {
   // Clear the canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Redraw the original image
-  const { img, drawWidth, drawHeight, offsetX, offsetY } = originalImage;
-  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+  const { img } = originalImage;
+
+  // Calculate the target dimensions for the image
+  const { targetWidth, targetHeight } = fitToBounds(
+    img.width,
+    img.height,
+    canvas.width,
+    canvas.height
+  );
+
+  // Compute the offsets to center the image
+  const offsetX = (canvas.width - targetWidth) / 2;
+  const offsetY = (canvas.height - targetHeight) / 2;
+
+  // Draw the scaled and centered image
+  ctx.globalAlpha = transparency;
+  ctx.drawImage(img, offsetX, offsetY, targetWidth, targetHeight);
 
   if (alphaMask) {
-    // Get image data for alpha mask application
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(offsetX, offsetY, targetWidth, targetHeight);
     const data = imageData.data;
 
     for (let i = 0; i < data.length; i += 4) {
-      // Convert pixel to grayscale
       const grayscale = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-
-      // Set pixel to black and scale transparency by the slider value
       data[i] = 0; // R
       data[i + 1] = 0; // G
       data[i + 2] = 0; // B
-      data[i + 3] = (255 - grayscale) * transparency; // Alpha scaled by transparency
+      data[i + 3] = (255 - grayscale) * transparency;
     }
 
-    // Put the modified data back on the canvas
-    ctx.putImageData(imageData, 0, 0);
+    ctx.putImageData(imageData, offsetX, offsetY);
+  } else if (invert) {
+    canvas.style.filter = "invert(100%)";
   } else {
-    // Apply standard filters using CSS
-    const filter = `opacity(${transparency})${invert ? " invert(100%)" : ""}`;
-    canvas.style.filter = filter;
+    canvas.style.filter = "none";
   }
+
+  // Reset global alpha for future operations
+  ctx.globalAlpha = 1.0;
 }
-
-
-
 
 
 
@@ -129,7 +140,6 @@ async function setupCamera() {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
 
-    // Wait for video metadata to load before adjusting canvas
     video.addEventListener("loadedmetadata", () => {
       video.play();
 
@@ -144,31 +154,20 @@ async function setupCamera() {
     console.error("Error accessing the camera", error);
 
     if (error.name === "OverconstrainedError") {
-      console.warn("Could not find rear camera. Trying front camera...");
       const fallbackConstraints = { video: { facingMode: "user" } };
-
       try {
         const stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
         video.srcObject = stream;
         video.addEventListener("loadedmetadata", () => {
           video.play();
-
-          // Sync canvas dimensions with the fallback video feed
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
-
-          // Redraw overlay
           updateCanvas();
         });
-
         alert("Using the front camera because the rear camera is not available.");
       } catch (fallbackError) {
-        console.error("Error accessing front camera:", fallbackError);
         alert("Could not access any camera. Please check your device and permissions.");
       }
-    } else if (error.name === "NotAllowedError") {
-      console.error("Camera permission denied.");
-      alert("Please grant camera permissions to use this feature.");
     } else {
       alert("An error occurred accessing the camera.");
     }
