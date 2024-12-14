@@ -1,3 +1,5 @@
+console.log("hey there")
+
 document.getElementById("imageInput").addEventListener("change", function (e) {
   if (e.target.files.length > 0) {
     const file = e.target.files[0];
@@ -27,8 +29,33 @@ function loadImage(url) {
     const ctx = canvas.getContext("2d");
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+
+    // Clear the canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    // Calculate image dimensions to fit within the canvas without distortion
+    const canvasAspect = canvas.width / canvas.height;
+    const imageAspect = img.width / img.height;
+
+    let drawWidth, drawHeight;
+    if (imageAspect > canvasAspect) {
+      // Image is wider relative to the canvas
+      drawWidth = canvas.width;
+      drawHeight = canvas.width / imageAspect;
+    } else {
+      // Image is taller relative to the canvas
+      drawHeight = canvas.height;
+      drawWidth = canvas.height * imageAspect;
+    }
+
+    // Center the image in the canvas
+    const offsetX = (canvas.width - drawWidth) / 2;
+    const offsetY = (canvas.height - drawHeight) / 2;
+
+    // Draw the image onto the canvas
+    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+
+    // Apply filters (transparency, invert colors, etc.)
     updateCanvas();
   };
   img.src = url;
