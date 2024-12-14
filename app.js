@@ -1,5 +1,3 @@
-console.log("hey there")
-
 document.getElementById("imageInput").addEventListener("change", function (e) {
   if (e.target.files.length > 0) {
     const file = e.target.files[0];
@@ -18,7 +16,6 @@ document
   .getElementById("alphaMaskToggle")
   .addEventListener("change", updateCanvas);
 
-
 document
   .getElementById("startCameraButton")
   .addEventListener("click", function () {
@@ -28,47 +25,24 @@ document
 
 let originalImage = null; // Global variable to store the original image
 
-function fitToBounds(innerWidth, innerHeight, outerWidth, outerHeight) {
-  const innerAspect = innerWidth / innerHeight;
-  const outerAspect = outerWidth / outerHeight;
-
-  let targetWidth, targetHeight;
-  if (innerAspect > outerAspect) {
-    // Image is wider than the container
-    targetWidth = outerWidth;
-    targetHeight = outerWidth / innerAspect;
-  } else {
-    // Image is taller than the container
-    targetHeight = outerHeight;
-    targetWidth = outerHeight * innerAspect;
-  }
-
-  return { targetWidth, targetHeight };
-}
-
-
 function loadImage(url) {
   const img = new Image();
   img.onload = function () {
     originalImage = { img }; // Save the uploaded image
 
     const canvas = document.getElementById("overlayCanvas");
-    const video = document.getElementById("videoFeed");
 
-    // Determine canvas dimensions
-    if (video.videoWidth && video.videoHeight) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    } else {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
+    // Set the canvas dimensions to match the uploaded image
+    canvas.width = img.width;
+    canvas.height = img.height;
 
-    // Redraw the canvas with the loaded image
+    // Redraw the overlay with the uploaded image
     updateCanvas();
   };
   img.src = url;
 }
+
+
 
 function updateCanvas() {
   const transparency = parseFloat(document.getElementById("transparencySlider").value);
@@ -85,24 +59,12 @@ function updateCanvas() {
 
   const { img } = originalImage;
 
-  // Calculate the target dimensions for the image
-  const { targetWidth, targetHeight } = fitToBounds(
-    img.width,
-    img.height,
-    canvas.width,
-    canvas.height
-  );
-
-  // Compute the offsets to center the image
-  const offsetX = (canvas.width - targetWidth) / 2;
-  const offsetY = (canvas.height - targetHeight) / 2;
-
-  // Draw the scaled and centered image
+  // Draw the image at its original resolution
   ctx.globalAlpha = transparency;
-  ctx.drawImage(img, offsetX, offsetY, targetWidth, targetHeight);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
   if (alphaMask) {
-    const imageData = ctx.getImageData(offsetX, offsetY, targetWidth, targetHeight);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
     for (let i = 0; i < data.length; i += 4) {
@@ -113,7 +75,7 @@ function updateCanvas() {
       data[i + 3] = (255 - grayscale) * transparency;
     }
 
-    ctx.putImageData(imageData, offsetX, offsetY);
+    ctx.putImageData(imageData, 0, 0);
   } else if (invert) {
     canvas.style.filter = "invert(100%)";
   } else {
@@ -125,10 +87,8 @@ function updateCanvas() {
 }
 
 
-
 async function setupCamera() {
   const video = document.getElementById("videoFeed");
-  const canvas = document.getElementById("overlayCanvas");
 
   const constraints = {
     video: {
@@ -142,34 +102,10 @@ async function setupCamera() {
 
     video.addEventListener("loadedmetadata", () => {
       video.play();
-
-      // Sync canvas dimensions with the video feed
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      // Redraw overlay to fit within the resized canvas
-      updateCanvas();
+      updateCanvas(); // Ensure the overlay is applied
     });
   } catch (error) {
     console.error("Error accessing the camera", error);
-
-    if (error.name === "OverconstrainedError") {
-      const fallbackConstraints = { video: { facingMode: "user" } };
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-        video.srcObject = stream;
-        video.addEventListener("loadedmetadata", () => {
-          video.play();
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          updateCanvas();
-        });
-        alert("Using the front camera because the rear camera is not available.");
-      } catch (fallbackError) {
-        alert("Could not access any camera. Please check your device and permissions.");
-      }
-    } else {
-      alert("An error occurred accessing the camera.");
-    }
+    alert("An error occurred accessing the camera. Please check your device and permissions.");
   }
 }

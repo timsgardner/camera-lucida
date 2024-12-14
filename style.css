@@ -2,35 +2,92 @@ body, html {
   margin: 0;
   padding: 0;
   width: 100%;
+  height: 100vh; /* Ensure the container fills the viewport */
+  box-sizing: border-box;
+/*  border: 1px solid #c33d95;*/
+  /* position: relative; */
+  display: flex;
+  flex-direction: column;
 }
 
 .controls {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-around;
+  justify-content: flex-start; /* Align controls to the left */
   align-items: center;
+  gap: 10px; /* Space between controls */
   padding: 10px;
   background-color: #f0f0f0;
-  width: 100%;
+  border-bottom: 1px solid #ccc; /* Optional: Separate controls visually */
+  font-family: Arial, sans-serif; /* Modern font */
+  font-size: 14px;
 }
 
-#imageDisplayContainer {
-  position: relative; /* Establishes a stacking context */
-  width: 100%;
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 5px; /* Space between label and input */
 }
 
-video, canvas {
-  width: 100%; /* Ensures both video and canvas fill the container */
-  display: block; /* Removes default margins/padding */
+.control-group label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
 }
 
-#videoFeed {
-  height: auto; /* Adjust height automatically to maintain aspect ratio */
+.control-group span {
+  font-size: 14px;
+  color: #333;
 }
 
-#overlayCanvas {
-  position: absolute;
+button#startCameraButton {
+  padding: 8px 15px;
+  font-size: 14px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button#startCameraButton:hover {
+  background-color: #0056b3;
+}
+
+
+#stuffContainer {
+  position: relative; /* Establish stacking context */
+  display: flex; /* Enable Flexbox for centering */
+  justify-content: center; /* Center horizontally */
+  align-items: center; /* Center vertically */
+  width: 100%; /* Full width */
+  height: 100%;
+  overflow: hidden; /* Prevent content overflow */
+  background: black; /* Optional for debugging alignment */
+}
+
+#videoContainer{
+  position: relative;
+  flex: auto;
+/*  border: 1px solid red;*/
+}
+
+video {
+  width: 100%; /* Scale to fit container width */
+  height: 100%; /* Scale to fit container height */
+  object-fit: contain; /* Maintain aspect ratio */
+  z-index: 1; /* Ensure video is below the canvas */
+}
+
+canvas {
+  position: absolute; /* Stack canvas on top of video */
   top: 0;
   left: 0;
-  pointer-events: none; /* Allows interaction with the video beneath */
+  width: 100%; /* Match video width */
+  height: 100%; /* Match video height */
+  pointer-events: none; /* Allow interactions with the video */
+  z-index: 2; /* Ensure canvas is above the video */
+  object-fit: contain;
 }
