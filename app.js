@@ -152,8 +152,8 @@ void main() {
       overlayColor.a = 1.0 - luminance; // Light areas are more transparent
 
       // Replace RGB with the indigo blue color #063970
-      // overlayColor.rgb = vec3(0.0235, 0.2235, 0.4392);
-      overlayColor.rgb = vec3(0,0,0);
+      overlayColor.rgb = vec3(0.0235, 0.2235, 0.4392);
+      // overlayColor.rgb = vec3(0,0,0);
     }
 
     // Blend video and overlay using the computed alpha
