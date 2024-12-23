@@ -88,32 +88,64 @@ const vertexShaderSource = `
   `;
 
 const fragmentShaderSource = `
-    precision mediump float;
-    varying vec2 v_texCoord;
-    uniform sampler2D u_texture;           // Video texture
-    uniform sampler2D u_overlayTexture;   // Overlay image texture
-    uniform float u_transparency;         // Transparency for blending
-    uniform vec2 u_overlayResolution;     // Resolution of overlay texture
-    uniform vec2 u_canvasResolution;      // Resolution of canvas
-    uniform float u_distortion;           // Distortion strength
-    uniform bool u_applyAlphaMask;        // Whether to apply inverse alpha masking
+precision mediump float;
+varying vec2 v_texCoord;
+uniform sampler2D u_texture;           // Video texture
+uniform sampler2D u_overlayTexture;   // Overlay image texture
+uniform float u_transparency;         // Transparency for blending
+uniform vec2 u_overlayResolution;     // Resolution of overlay texture
+uniform vec2 u_canvasResolution;      // Resolution of canvas
+uniform float u_distortion;           // Distortion strength
+uniform bool u_applyAlphaMask;        // Whether to apply inverse alpha masking
+uniform bool u_hasOverlay;            // Whether an overlay is active
 
-    void main() {
-      vec4 videoColor = texture2D(u_texture, v_texCoord);
+void main() {
+  vec4 videoColor = texture2D(u_texture, v_texCoord);
 
-      // Adjust overlay texture sampling for its resolution
-      vec2 overlayCoord = v_texCoord * u_canvasResolution / u_overlayResolution;
-      vec4 overlayColor = texture2D(u_overlayTexture, overlayCoord);
+  vec4 blendedColor = videoColor; // Default to videoColor if no overlay
 
-      // Optionally apply an inverse alpha mask
-      if (u_applyAlphaMask) {
-        overlayColor.a = 1.0 - overlayColor.a;
-      }
+  if (u_hasOverlay) {
+    // Aspect ratios
+    float canvasAspect = u_canvasResolution.x / u_canvasResolution.y;
+    float overlayAspect = u_overlayResolution.x / u_overlayResolution.y;
 
-      // Blend video and overlay using transparency
-      vec4 blendedColor = mix(videoColor, overlayColor, u_transparency);
-      gl_FragColor = blendedColor;
+    // Determine scale factor for "object-fit: contain"
+    vec2 scaleFactor = vec2(1.0);
+    vec2 offset = vec2(0.0);
+
+    if (canvasAspect > overlayAspect) {
+      // Canvas is wider than overlay
+      scaleFactor.x = overlayAspect / canvasAspect;
+      offset.x = (1.0 - scaleFactor.x) / 2.0;
+    } else {
+      // Canvas is taller than overlay
+      scaleFactor.y = canvasAspect / overlayAspect;
+      offset.y = (1.0 - scaleFactor.y) / 2.0;
     }
+
+    // Scale and center the texture coordinates
+    vec2 adjustedCoord = (v_texCoord - offset) / scaleFactor;
+
+    // Clamp texture coordinates to avoid stretching
+    if (adjustedCoord.x < 0.0 || adjustedCoord.x > 1.0 || adjustedCoord.y < 0.0 || adjustedCoord.y > 1.0) {
+      gl_FragColor = videoColor; // No overlay contribution outside bounds
+      return;
+    }
+
+    vec4 overlayColor = texture2D(u_overlayTexture, adjustedCoord);
+
+    // Apply inverse alpha mask if enabled
+    if (u_applyAlphaMask) {
+      overlayColor.a = 1.0 - overlayColor.a;
+    }
+
+    // Blend video and overlay
+    blendedColor = mix(videoColor, overlayColor, u_transparency);
+  }
+
+  gl_FragColor = blendedColor;
+}
+
   `;
 
 function createShader(gl, type, source) {
@@ -151,7 +183,6 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
   );
   const program = createProgram(gl, vertexShader, fragmentShader);
 
-  // Look up attribute and uniform locations
   const positionLocation = gl.getAttribLocation(program, "a_position");
   const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
   const textureLocation = gl.getUniformLocation(program, "u_texture");
@@ -170,8 +201,8 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
   );
   const distortionLocation = gl.getUniformLocation(program, "u_distortion");
   const alphaMaskLocation = gl.getUniformLocation(program, "u_applyAlphaMask");
+  const hasOverlayLocation = gl.getUniformLocation(program, "u_hasOverlay");
 
-  // Prepare buffers
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
   gl.bufferData(
@@ -188,7 +219,6 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
     gl.STATIC_DRAW
   );
 
-  // Create texture for video
   const videoTexture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, videoTexture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -200,8 +230,9 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
     const { imageTexture, transparency, overlayResolution, applyAlphaMask } =
       getOverlaySettings();
 
+    const hasOverlay = Boolean(imageTexture);
+
     if (video.readyState >= 2) {
-      // Update video texture
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(
         gl.TEXTURE_2D,
@@ -212,41 +243,43 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
         video
       );
 
-      // Clear the canvas
       gl.clear(gl.COLOR_BUFFER_BIT);
-
       gl.useProgram(program);
 
-      // Set position buffer
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
       gl.enableVertexAttribArray(positionLocation);
       gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-      // Set texture coordinate buffer
       gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
       gl.enableVertexAttribArray(texCoordLocation);
       gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
-      // Set uniforms
-      gl.uniform1i(textureLocation, 0); // Video texture
+      gl.uniform1i(textureLocation, 0);
       gl.uniform1f(transparencyLocation, transparency);
       gl.uniform2f(canvasResolutionLocation, canvas.width, canvas.height);
-      gl.uniform2f(
-        overlayResolutionLocation,
-        overlayResolution.width,
-        overlayResolution.height
-      );
-      gl.uniform1f(distortionLocation, getDistortion());
-      gl.uniform1i(alphaMaskLocation, applyAlphaMask ? 1 : 0);
+      gl.uniform1i(hasOverlayLocation, hasOverlay ? 1 : 0);
 
-      if (imageTexture) {
-        // Bind and activate overlay texture
+      if (hasOverlay) {
+        gl.uniform2f(
+          overlayResolutionLocation,
+          overlayResolution.width,
+          overlayResolution.height
+        );
+        gl.uniform1i(alphaMaskLocation, applyAlphaMask ? 1 : 0);
+
+        gl.uniform2f(canvasResolutionLocation, canvas.width, canvas.height);
+        gl.uniform2f(
+          overlayResolutionLocation,
+          overlayResolution.width,
+          overlayResolution.height
+        );
+        gl.uniform1i(hasOverlayLocation, imageTexture ? 1 : 0);
+
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, imageTexture);
         gl.uniform1i(overlayTextureLocation, 1);
       }
 
-      // Draw the rectangle
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
