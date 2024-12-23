@@ -90,15 +90,29 @@ const vertexShaderSource = `
 const fragmentShaderSource = `
     precision mediump float;
     varying vec2 v_texCoord;
-    uniform sampler2D u_texture;
-    uniform float u_distortion;
+    uniform sampler2D u_texture;           // Video texture
+    uniform sampler2D u_overlayTexture;   // Overlay image texture
+    uniform float u_transparency;         // Transparency for blending
+    uniform vec2 u_overlayResolution;     // Resolution of overlay texture
+    uniform vec2 u_canvasResolution;      // Resolution of canvas
+    uniform float u_distortion;           // Distortion strength
+    uniform bool u_applyAlphaMask;        // Whether to apply inverse alpha masking
 
     void main() {
-      vec2 coord = v_texCoord;
-      coord -= 0.5; // Center the coordinates
-      coord *= 1.0 + u_distortion * length(coord); // Apply distortion
-      coord += 0.5; // Restore to original range
-      gl_FragColor = texture2D(u_texture, coord);
+      vec4 videoColor = texture2D(u_texture, v_texCoord);
+
+      // Adjust overlay texture sampling for its resolution
+      vec2 overlayCoord = v_texCoord * u_canvasResolution / u_overlayResolution;
+      vec4 overlayColor = texture2D(u_overlayTexture, overlayCoord);
+
+      // Optionally apply an inverse alpha mask
+      if (u_applyAlphaMask) {
+        overlayColor.a = 1.0 - overlayColor.a;
+      }
+
+      // Blend video and overlay using transparency
+      vec4 blendedColor = mix(videoColor, overlayColor, u_transparency);
+      gl_FragColor = blendedColor;
     }
   `;
 
@@ -127,7 +141,8 @@ function createProgram(gl, vertexShader, fragmentShader) {
   return program;
 }
 
-function setupRender(video, gl, getDistortion) {
+function setupRender(video, gl, getDistortion, getOverlaySettings) {
+  const canvas = document.getElementById("webglCanvas");
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
   const fragmentShader = createShader(
     gl,
@@ -140,38 +155,54 @@ function setupRender(video, gl, getDistortion) {
   const positionLocation = gl.getAttribLocation(program, "a_position");
   const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
   const textureLocation = gl.getUniformLocation(program, "u_texture");
+  const overlayTextureLocation = gl.getUniformLocation(
+    program,
+    "u_overlayTexture"
+  );
+  const transparencyLocation = gl.getUniformLocation(program, "u_transparency");
+  const canvasResolutionLocation = gl.getUniformLocation(
+    program,
+    "u_canvasResolution"
+  );
+  const overlayResolutionLocation = gl.getUniformLocation(
+    program,
+    "u_overlayResolution"
+  );
   const distortionLocation = gl.getUniformLocation(program, "u_distortion");
+  const alphaMaskLocation = gl.getUniformLocation(program, "u_applyAlphaMask");
 
-  // Create a buffer for positions
+  // Prepare buffers
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  const positions = new Float32Array([
-    -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0,
-  ]);
-  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0]),
+    gl.STATIC_DRAW
+  );
 
-  // Create a buffer for texture coordinates
   const texCoordBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-  const texCoords = new Float32Array([0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]);
-  gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]),
+    gl.STATIC_DRAW
+  );
 
-  // Utility function to set texture parameters
-  function setTextureParameters(gl) {
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  }
-
-  // Create a texture and bind the video to it
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  setTextureParameters(gl);
+  // Create texture for video
+  const videoTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   function render() {
+    const { imageTexture, transparency, overlayResolution, applyAlphaMask } =
+      getOverlaySettings();
+
     if (video.readyState >= 2) {
-      gl.bindTexture(gl.TEXTURE_2D, texture);
+      // Update video texture
+      gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
@@ -181,24 +212,39 @@ function setupRender(video, gl, getDistortion) {
         video
       );
 
-      gl.clearColor(0, 0, 0, 1);
+      // Clear the canvas
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       gl.useProgram(program);
 
-      // Set positions
+      // Set position buffer
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
       gl.enableVertexAttribArray(positionLocation);
       gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-      // Set texture coordinates
+      // Set texture coordinate buffer
       gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
       gl.enableVertexAttribArray(texCoordLocation);
       gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
       // Set uniforms
-      gl.uniform1i(textureLocation, 0);
+      gl.uniform1i(textureLocation, 0); // Video texture
+      gl.uniform1f(transparencyLocation, transparency);
+      gl.uniform2f(canvasResolutionLocation, canvas.width, canvas.height);
+      gl.uniform2f(
+        overlayResolutionLocation,
+        overlayResolution.width,
+        overlayResolution.height
+      );
       gl.uniform1f(distortionLocation, getDistortion());
+      gl.uniform1i(alphaMaskLocation, applyAlphaMask ? 1 : 0);
+
+      if (imageTexture) {
+        // Bind and activate overlay texture
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+        gl.uniform1i(overlayTextureLocation, 1);
+      }
 
       // Draw the rectangle
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -255,6 +301,63 @@ function setupDistortionSlider(getDistortion, setDistortion) {
   updateDistortion(getDistortion());
 }
 
+function setupImageOverlay(gl, updateRender) {
+  const imageInput = document.getElementById("imageInput");
+  const transparencySlider = document.getElementById("transparencySlider");
+  const alphaMaskToggle = document.getElementById("alphaMaskToggle");
+
+  let imageTexture = null;
+  let overlayResolution = { width: 1, height: 1 };
+  let transparency = parseFloat(transparencySlider.value);
+  let applyAlphaMask = alphaMaskToggle.checked;
+
+  // Update transparency from slider
+  transparencySlider.addEventListener("input", (event) => {
+    transparency = parseFloat(event.target.value);
+    updateRender(); // Trigger a re-render
+  });
+
+  // Update alpha mask toggle
+  alphaMaskToggle.addEventListener("change", (event) => {
+    applyAlphaMask = event.target.checked;
+    updateRender(); // Trigger a re-render
+  });
+
+  // Handle image uploads
+  imageInput.addEventListener("change", (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const img = new Image();
+    img.onload = () => {
+      if (imageTexture) {
+        gl.deleteTexture(imageTexture);
+      }
+
+      imageTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+      // Update overlay resolution
+      overlayResolution = { width: img.width, height: img.height };
+      updateRender(); // Trigger a re-render
+    };
+    img.src = URL.createObjectURL(file);
+  });
+
+  // Provide current overlay settings
+  return () => ({
+    imageTexture,
+    transparency,
+    overlayResolution,
+    applyAlphaMask, // Ensure this is included
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const canvas = document.getElementById("webglCanvas");
   const gl = canvas.getContext("webgl");
@@ -266,7 +369,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let distortion = 0.0;
 
-  // Pass getter and setter functions to the setupDistortionSlider
+  // Setup distortion slider
   setupDistortionSlider(
     () => distortion, // Getter for the current distortion value
     (value) => {
@@ -274,5 +377,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } // Setter for updating the distortion value
   );
 
-  setupRender(video, gl, () => distortion);
+  // Setup image overlay
+  const getOverlaySettings = setupImageOverlay(gl, () => {
+    updateCanvasSize(video, gl); // Recalculate canvas if needed
+  });
+
+  // Setup WebGL rendering
+  setupRender(video, gl, () => distortion, getOverlaySettings);
 });
