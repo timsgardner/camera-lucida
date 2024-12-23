@@ -41,20 +41,8 @@
       </div>
       <div class="control-group">
         <label>
-          <input type="checkbox" id="invertColorsToggle" />
-          <span>Invert Colors</span>
-        </label>
-      </div>
-      <div class="control-group">
-        <label>
           <input type="checkbox" id="alphaMaskToggle" />
           <span>Apply Inverse Alpha Mask</span>
-        </label>
-      </div>
-      <div class="control-group">
-        <label>
-          <input type="checkbox" id="useWebGLToggle" />
-          <span>Use WebGL Rendering</span>
         </label>
       </div>
       <button id="startCameraButton">Start Camera</button>
@@ -63,7 +51,7 @@
     <!-- Video and canvas container -->
     <div id="stuffContainer">
       <div id="videoContainer">
-        <video id="videoFeed" playsinline autoplay muted></video>
+        <canvas id="webglCanvas"></canvas>
         <canvas id="overlayCanvas"></canvas>
       </div>
     </div>

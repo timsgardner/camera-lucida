@@ -66,20 +66,18 @@ button#startCameraButton:hover {
 
 #videoContainer{
   position: relative;
-  flex: auto;
-  height: 100%;
-  width: 100%;
   box-sizing: border-box;
 }
 
-video {
-  width: 100%; /* Scale to fit container width */
-  height: 100%; /* Scale to fit container height */
-  object-fit: contain; /* Maintain aspect ratio */
-  z-index: 1; /* Ensure video is below the canvas */
+/* Canvas styling */
+#webglCanvas {
+  width: 100%; /* Scale to fill container */
+  height: auto; /* Maintain aspect ratio */
+  max-width: 100%; /* Prevent overflow */
+  display: block; /* Prevent inline spacing issues */
 }
 
-canvas {
+#overlayCanvas {
   position: absolute; /* Stack canvas on top of video */
   top: 0;
   left: 0;
