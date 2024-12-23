@@ -5,6 +5,7 @@ body, html {
   height: 100vh; /* Ensure the container fills the viewport */
   box-sizing: border-box;
   display: flex;
+  border: 2px solid blue;
   flex-direction: column;
 }
 
@@ -17,8 +18,10 @@ body, html {
   padding: 10px;
   background-color: #f0f0f0;
   border-bottom: 1px solid #ccc; /* Optional: Separate controls visually */
+  box-sizing: border-box;
   font-family: Arial, sans-serif; /* Modern font */
   font-size: 14px;
+  flex-shrink: 0;  /* Prevent controls from shrinking */
 }
 
 .control-group {
@@ -60,30 +63,20 @@ button#startCameraButton:hover {
   display: flex; /* Enable Flexbox for centering */
   justify-content: center; /* Center horizontally */
   align-items: center; /* Center vertically */
-  max-height: 100%;
+  height: 100%;
+  width: 100%;
+  max-height:100%;
   box-sizing: border-box;
+  border: 2px solid red;
+  flex-grow: 1;            /* Takes remaining space */
+  overflow: hidden;
 }
 
-#videoContainer{
-  position: relative;
-  box-sizing: border-box;
-}
 
 /* Canvas styling */
 #webglCanvas {
-  width: 100%; /* Scale to fill container */
-  height: auto; /* Maintain aspect ratio */
-  max-width: 100%; /* Prevent overflow */
-  display: block; /* Prevent inline spacing issues */
-}
-
-#overlayCanvas {
-  position: absolute; /* Stack canvas on top of video */
-  top: 0;
-  left: 0;
-  width: 100%; /* Match video width */
-  height: 100%; /* Match video height */
-  pointer-events: none; /* Allow interactions with the video */
-  z-index: 2; /* Ensure canvas is above the video */
-  object-fit: contain;
+  display: block; /* Remove inline spacing */
+  max-width: 100%; /* Prevent horizontal overflow */
+  max-height: 100%; /* Prevent vertical overflow */
+  object-fit: contain; /* Ensure aspect ratio is maintained */
 }

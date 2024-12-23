@@ -106,22 +106,40 @@ document.addEventListener("DOMContentLoaded", () => {
   gl.bindTexture(gl.TEXTURE_2D, texture);
   setTextureParameters(gl);
 
-  function updateCanvasViewport() {
-    // const width = canvas.clientWidth;
-    // const height = canvas.clientHeight;
-    // if (canvas.width !== width || canvas.height !== height) {
-    //   canvas.width = width;
-    //   canvas.height = height;
-    //   gl.viewport(0, 0, canvas.width, canvas.height);
-    // }
+  function updateCanvasSize() {
+    const container = document.getElementById("stuffContainer");
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    const videoAspectRatio = video.videoWidth / video.videoHeight;
+
+    let canvasWidth, canvasHeight;
+
+    if (containerWidth / containerHeight > videoAspectRatio) {
+      // Container is wider than the video aspect ratio
+      canvasHeight = containerHeight;
+      canvasWidth = canvasHeight * videoAspectRatio;
+    } else {
+      // Container is taller than the video aspect ratio
+      canvasWidth = containerWidth;
+      canvasHeight = canvasWidth / videoAspectRatio;
+    }
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${canvasHeight}px`;
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
-  video.addEventListener("loadedmetadata", updateCanvasViewport);
+  window.addEventListener("resize", updateCanvasSize);
+  // Call updateCanvasSize during initialization to ensure correct viewport
+  video.addEventListener("loadedmetadata", updateCanvasSize);
 
   let distortion = 0.0;
   const slider = document.getElementById("distortionSlider");
-  slider.min = -0.2; // Set the minimum range of the slider
-  slider.max = 0.2; // Set the maximum range of the slider
+  slider.min = -2.0; // Set the minimum range of the slider
+  slider.max = 2.0; // Set the maximum range of the slider
   let debounceTimeout;
   slider.addEventListener("input", (event) => {
     clearTimeout(debounceTimeout);
@@ -168,6 +186,5 @@ document.addEventListener("DOMContentLoaded", () => {
     requestAnimationFrame(render);
   }
 
-  window.addEventListener("resize", updateCanvasViewport);
   video.addEventListener("play", render);
 });
