@@ -1,8 +1,39 @@
-document.addEventListener("DOMContentLoaded", () => {
-  // Get references to the canvas and initialize WebGL
-  const canvas = document.getElementById("webglCanvas");
-  const gl = canvas.getContext("webgl");
+function setupCameraButton(video, gl) {
+  const startCameraButton = document.getElementById("startCameraButton");
 
+  async function startCamera() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(
+        (device) => device.kind === "videoinput"
+      );
+
+      // Prefer a "back" camera if available
+      const backCamera = videoInputs.find((device) =>
+        device.label.toLowerCase().includes("back")
+      );
+      const constraints = {
+        video: backCamera ? { deviceId: backCamera.deviceId } : true,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+
+      video.addEventListener("loadedmetadata", () => {
+        updateCanvasSize(video, gl);
+        video.play();
+      });
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+    }
+  }
+
+  startCameraButton.addEventListener("click", () => {
+    startCamera();
+  });
+}
+
+function initializeVideo(gl) {
   // Initialize video feed from the camera
   const video = document.createElement("video");
   video.autoplay = true;
@@ -12,6 +43,46 @@ document.addEventListener("DOMContentLoaded", () => {
       video.srcObject = stream;
     })
     .catch((err) => console.error("Error accessing camera:", err));
+
+  setupCameraButton(video, gl);
+  return video;
+}
+
+function updateCanvasSize(video, gl) {
+  const container = document.getElementById("stuffContainer");
+  const canvas = document.getElementById("webglCanvas");
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const videoAspectRatio = video.videoWidth / video.videoHeight;
+
+  let canvasWidth, canvasHeight;
+
+  if (containerWidth / containerHeight > videoAspectRatio) {
+    // Container is wider than the video aspect ratio
+    canvasHeight = containerHeight;
+    canvasWidth = canvasHeight * videoAspectRatio;
+  } else {
+    // Container is taller than the video aspect ratio
+    canvasWidth = containerWidth;
+    canvasHeight = canvasWidth / videoAspectRatio;
+  }
+
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  canvas.style.width = `${canvasWidth}px`;
+  canvas.style.height = `${canvasHeight}px`;
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Get references to the canvas and initialize WebGL
+  const canvas = document.getElementById("webglCanvas");
+  const gl = canvas.getContext("webgl");
+
+  const video = initializeVideo(gl);
+
+  setupCameraButton(video, gl);
 
   // Initialize WebGL program
   const vertexShaderSource = `
@@ -106,35 +177,9 @@ document.addEventListener("DOMContentLoaded", () => {
   gl.bindTexture(gl.TEXTURE_2D, texture);
   setTextureParameters(gl);
 
-  function updateCanvasSize() {
-    const container = document.getElementById("stuffContainer");
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
-    const videoAspectRatio = video.videoWidth / video.videoHeight;
-
-    let canvasWidth, canvasHeight;
-
-    if (containerWidth / containerHeight > videoAspectRatio) {
-      // Container is wider than the video aspect ratio
-      canvasHeight = containerHeight;
-      canvasWidth = canvasHeight * videoAspectRatio;
-    } else {
-      // Container is taller than the video aspect ratio
-      canvasWidth = containerWidth;
-      canvasHeight = canvasWidth / videoAspectRatio;
-    }
-
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    canvas.style.width = `${canvasWidth}px`;
-    canvas.style.height = `${canvasHeight}px`;
-
-    gl.viewport(0, 0, canvas.width, canvas.height);
-  }
-
-  window.addEventListener("resize", updateCanvasSize);
+  window.addEventListener("resize", () => updateCanvasSize(video, gl));
   // Call updateCanvasSize during initialization to ensure correct viewport
-  video.addEventListener("loadedmetadata", updateCanvasSize);
+  video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));
 
   let distortion = 0.0;
   const slider = document.getElementById("distortionSlider");
