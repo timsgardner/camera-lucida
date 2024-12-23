@@ -80,3 +80,8 @@ button#startCameraButton:hover {
   max-height: 100%; /* Prevent vertical overflow */
   object-fit: contain; /* Ensure aspect ratio is maintained */
 }
+
+.control-group input[type="number"] {
+  margin-left: 5px;
+  text-align: right;
+}

@@ -75,17 +75,8 @@ function updateCanvasSize(video, gl) {
   gl.viewport(0, 0, canvas.width, canvas.height);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Get references to the canvas and initialize WebGL
-  const canvas = document.getElementById("webglCanvas");
-  const gl = canvas.getContext("webgl");
-
-  const video = initializeVideo(gl);
-
-  setupCameraButton(video, gl);
-
-  // Initialize WebGL program
-  const vertexShaderSource = `
+// Initialize WebGL program
+const vertexShaderSource = `
     attribute vec2 a_position;
     attribute vec2 a_texCoord;
     varying vec2 v_texCoord;
@@ -96,7 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   `;
 
-  const fragmentShaderSource = `
+const fragmentShaderSource = `
     precision mediump float;
     varying vec2 v_texCoord;
     uniform sampler2D u_texture;
@@ -111,31 +102,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   `;
 
-  function createShader(gl, type, source) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      console.error("Shader compile error:", gl.getShaderInfoLog(shader));
-      gl.deleteShader(shader);
-      return null;
-    }
-    return shader;
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error("Shader compile error:", gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
   }
+  return shader;
+}
 
-  function createProgram(gl, vertexShader, fragmentShader) {
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.error("Program link error:", gl.getProgramInfoLog(program));
-      gl.deleteProgram(program);
-      return null;
-    }
-    return program;
+function createProgram(gl, vertexShader, fragmentShader) {
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error("Program link error:", gl.getProgramInfoLog(program));
+    gl.deleteProgram(program);
+    return null;
   }
+  return program;
+}
 
+function setupRender(video, gl, getDistortion) {
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
   const fragmentShader = createShader(
     gl,
@@ -177,22 +169,6 @@ document.addEventListener("DOMContentLoaded", () => {
   gl.bindTexture(gl.TEXTURE_2D, texture);
   setTextureParameters(gl);
 
-  window.addEventListener("resize", () => updateCanvasSize(video, gl));
-  // Call updateCanvasSize during initialization to ensure correct viewport
-  video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));
-
-  let distortion = 0.0;
-  const slider = document.getElementById("distortionSlider");
-  slider.min = -2.0; // Set the minimum range of the slider
-  slider.max = 2.0; // Set the maximum range of the slider
-  let debounceTimeout;
-  slider.addEventListener("input", (event) => {
-    clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(() => {
-      distortion = parseFloat(event.target.value);
-    }, 100);
-  });
-
   function render() {
     if (video.readyState >= 2) {
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -222,7 +198,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Set uniforms
       gl.uniform1i(textureLocation, 0);
-      gl.uniform1f(distortionLocation, distortion);
+      gl.uniform1f(distortionLocation, getDistortion());
 
       // Draw the rectangle
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -232,4 +208,71 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   video.addEventListener("play", render);
+}
+
+function setupDistortionSlider(getDistortion, setDistortion) {
+  const slider = document.getElementById("distortionSlider");
+  const input = document.getElementById("distortionValue");
+
+  function updateDistortion(value) {
+    setDistortion(value); // Update the distortion value in the rendering logic
+    slider.value = value; // Sync the slider
+    input.value = value; // Sync the input field
+  }
+
+  // Handle slider input
+  slider.addEventListener("input", (event) => {
+    const value = parseFloat(event.target.value);
+    updateDistortion(value);
+  });
+
+  // Handle input field interactions
+  input.addEventListener("blur", () => {
+    // Update the distortion when the user leaves the input field
+    let value = parseFloat(input.value);
+    const min = parseFloat(input.min);
+    const max = parseFloat(input.max);
+
+    if (isNaN(value)) {
+      value = getDistortion(); // Revert to the current distortion if input is invalid
+    } else {
+      // Clamp the value to the slider's range
+      if (value < min) value = min;
+      if (value > max) value = max;
+    }
+
+    updateDistortion(value);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      // Handle updates when pressing Enter
+      input.blur(); // Trigger the blur handler to update the value
+    }
+  });
+
+  // Initialize the input and slider with the current distortion value
+  updateDistortion(getDistortion());
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const canvas = document.getElementById("webglCanvas");
+  const gl = canvas.getContext("webgl");
+  const video = initializeVideo(gl);
+
+  setupCameraButton(video, gl);
+  window.addEventListener("resize", () => updateCanvasSize(video, gl));
+  video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));
+
+  let distortion = 0.0;
+
+  // Pass getter and setter functions to the setupDistortionSlider
+  setupDistortionSlider(
+    () => distortion, // Getter for the current distortion value
+    (value) => {
+      distortion = value;
+    } // Setter for updating the distortion value
+  );
+
+  setupRender(video, gl, () => distortion);
 });
