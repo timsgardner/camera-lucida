@@ -95,6 +95,32 @@ function initializeVideo() {
   return video;
 }
 
+function setupControlMenu() {
+  const menuToggle = document.getElementById("menuToggle");
+  const controlsPanel = document.getElementById("controlsPanel");
+  const closeControlsButton = document.getElementById("closeControlsButton");
+
+  function setMenuOpen(isOpen) {
+    controlsPanel.classList.toggle("is-open", isOpen);
+    document.body.classList.toggle("controls-open", isOpen);
+    menuToggle.setAttribute("aria-expanded", String(isOpen));
+
+    if (isOpen) {
+      closeControlsButton.focus();
+    } else {
+      menuToggle.focus();
+    }
+  }
+
+  menuToggle.addEventListener("click", () => setMenuOpen(true));
+  closeControlsButton.addEventListener("click", () => setMenuOpen(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && controlsPanel.classList.contains("is-open")) {
+      setMenuOpen(false);
+    }
+  });
+}
+
 function updateCanvasSize(video, gl) {
   const container = document.getElementById("stuffContainer");
   const canvas = document.getElementById("webglCanvas");
@@ -461,6 +487,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const gl = canvas.getContext("webgl");
   const video = initializeVideo();
 
+  setupControlMenu();
   setupCameraButton(video);
   window.addEventListener("resize", () => updateCanvasSize(video, gl));
   video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));

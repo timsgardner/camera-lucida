@@ -23,6 +23,14 @@ body, html {
   flex-shrink: 0;  /* Prevent controls from shrinking */
 }
 
+#menuToggle {
+  display: none;
+}
+
+.controls-header {
+  display: none;
+}
+
 .control-group {
   display: flex;
   align-items: center;
@@ -91,4 +99,123 @@ button#startCameraButton:hover {
 #cameraStatus {
   color: #555;
   font-size: 13px;
+}
+
+@media (max-width: 600px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #menuToggle {
+    display: block;
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    right: 12px;
+    z-index: 12;
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 8px;
+    background: #007bff;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  }
+
+  body.controls-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .controls {
+    display: none;
+    position: fixed;
+    top: max(68px, calc(env(safe-area-inset-top) + 56px));
+    right: 12px;
+    left: 12px;
+    z-index: 11;
+    max-height: calc(100dvh - 84px);
+    overflow-y: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 12px;
+    background: #f7f7f7;
+    box-shadow: 0 8px 28px rgb(0 0 0 / 30%);
+    font-size: 16px;
+  }
+
+  .controls.is-open {
+    display: flex;
+  }
+
+  .controls-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 20px;
+  }
+
+  #closeControlsButton {
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid #999;
+    border-radius: 6px;
+    background: white;
+    color: #222;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .control-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .control-group label,
+  .control-group span {
+    font-size: 16px;
+  }
+
+  .control-group input[type="file"],
+  .control-group input[type="range"],
+  .control-group select {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+  }
+
+  .control-group input[type="range"] {
+    min-height: 36px;
+  }
+
+  .control-group input[type="number"] {
+    width: 100% !important;
+    min-height: 44px;
+    box-sizing: border-box;
+    font-size: 16px;
+  }
+
+  .control-group select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  button#startCameraButton {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  #cameraStatus {
+    font-size: 16px;
+  }
 }

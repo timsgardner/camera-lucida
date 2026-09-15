@@ -6,7 +6,20 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="controls">
+    <button
+      id="menuToggle"
+      type="button"
+      aria-controls="controlsPanel"
+      aria-expanded="false"
+    >
+      Controls
+    </button>
+
+    <div class="controls" id="controlsPanel">
+      <div class="controls-header">
+        <strong>Controls</strong>
+        <button id="closeControlsButton" type="button">Close</button>
+      </div>
       <div class="control-group">
         <label>
           <span>Upload Image:</span>
