@@ -83,3 +83,12 @@ button#startCameraButton:hover {
   margin-left: 5px;
   text-align: right;
 }
+
+.control-group select {
+  max-width: 220px;
+}
+
+#cameraStatus {
+  color: #555;
+  font-size: 13px;
+}

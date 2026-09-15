@@ -54,7 +54,14 @@
           <span>Apply Inverse Alpha Mask</span>
         </label>
       </div>
+      <div class="control-group">
+        <label for="cameraSelect">Camera:</label>
+        <select id="cameraSelect" disabled>
+          <option>Start camera to choose</option>
+        </select>
+      </div>
       <button id="startCameraButton">Start Camera</button>
+      <span id="cameraStatus" role="status" aria-live="polite"></span>
     </div>
 
     <!-- Video and canvas container -->

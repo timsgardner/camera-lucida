@@ -1,56 +1,105 @@
-function setupCameraButton(video, gl) {
+function setupCameraButton(video) {
   const startCameraButton = document.getElementById("startCameraButton");
+  const cameraSelect = document.getElementById("cameraSelect");
+  const cameraStatus = document.getElementById("cameraStatus");
+  let currentStream = null;
+  let isStarting = false;
 
-  async function startCamera() {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoInputs = devices.filter(
-        (device) => device.kind === "videoinput"
-      );
+  async function updateCameraList(activeDeviceId) {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter(
+      (device) => device.kind === "videoinput"
+    );
 
-      // Prefer a "back" camera if available
-      const backCamera = videoInputs.find((device) =>
-        device.label.toLowerCase().includes("back")
-      );
-      const constraints = {
-        video: backCamera ? { deviceId: backCamera.deviceId } : true,
-      };
+    cameraSelect.replaceChildren();
+    videoInputs.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.textContent = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = stream;
-
-      video.addEventListener("loadedmetadata", () => {
-        updateCanvasSize(video, gl);
-        video.play();
-      });
-    } catch (err) {
-      console.error("Error accessing camera:", err);
+    cameraSelect.disabled = videoInputs.length === 0;
+    if (activeDeviceId && videoInputs.some((device) => device.deviceId === activeDeviceId)) {
+      cameraSelect.value = activeDeviceId;
     }
   }
 
-  startCameraButton.addEventListener("click", () => {
-    startCamera();
+  async function startCamera(deviceId = null) {
+    if (isStarting) return;
+
+    isStarting = true;
+    startCameraButton.disabled = true;
+    cameraStatus.textContent = "Requesting camera access...";
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Camera access is not available in this browser.");
+      }
+
+      if (currentStream) {
+        currentStream.getTracks().forEach((track) => track.stop());
+      }
+
+      const videoConstraints = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : { facingMode: { ideal: "environment" } };
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
+        });
+      } catch (error) {
+        if (deviceId || error.name !== "OverconstrainedError") {
+          throw error;
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      currentStream = stream;
+      video.srcObject = currentStream;
+      const activeTrack = currentStream.getVideoTracks()[0];
+      const activeDeviceId = activeTrack?.getSettings().deviceId;
+      await updateCameraList(activeDeviceId);
+      cameraStatus.textContent = "Camera active";
+
+      await video.play();
+    } catch (error) {
+      cameraStatus.textContent = `Camera error: ${error.message}`;
+      console.error("Error accessing camera:", error);
+    } finally {
+      isStarting = false;
+      startCameraButton.disabled = false;
+    }
+  }
+
+  cameraSelect.addEventListener("change", () => {
+    if (cameraSelect.value) {
+      startCamera(cameraSelect.value);
+    }
   });
+
+  startCameraButton.addEventListener("click", () => startCamera());
 }
 
-function initializeVideo(gl) {
-  // Initialize video feed from the camera
+function initializeVideo() {
   const video = document.createElement("video");
   video.autoplay = true;
-  navigator.mediaDevices
-    .getUserMedia({ video: true })
-    .then((stream) => {
-      video.srcObject = stream;
-    })
-    .catch((err) => console.error("Error accessing camera:", err));
-
-  setupCameraButton(video, gl);
+  video.muted = true;
+  video.playsInline = true;
   return video;
 }
 
 function updateCanvasSize(video, gl) {
   const container = document.getElementById("stuffContainer");
   const canvas = document.getElementById("webglCanvas");
+  if (!video.videoWidth || !video.videoHeight) return;
+
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
   const videoAspectRatio = video.videoWidth / video.videoHeight;
@@ -410,9 +459,9 @@ function setupImageOverlay(gl, updateRender) {
 document.addEventListener("DOMContentLoaded", () => {
   const canvas = document.getElementById("webglCanvas");
   const gl = canvas.getContext("webgl");
-  const video = initializeVideo(gl);
+  const video = initializeVideo();
 
-  setupCameraButton(video, gl);
+  setupCameraButton(video);
   window.addEventListener("resize", () => updateCanvasSize(video, gl));
   video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));
 
