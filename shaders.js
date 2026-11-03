@@ -29,19 +29,11 @@ uniform sampler2D u_overlayTexture;   // Overlay image texture
 uniform float u_opacity;              // Overlay opacity for blending
 uniform vec2 u_overlayResolution;     // Resolution of overlay texture
 uniform vec2 u_canvasResolution;      // Resolution of canvas
-uniform float u_distortion;           // Distortion strength
 uniform int u_overlayMode;            // One of OVERLAY_MODES
 uniform float u_edgeThreshold;        // Minimum gradient that counts as an edge
 uniform bool u_hasOverlay;            // Whether an overlay is active
 uniform bool u_enhancePencil;         // Whether to bring out faint pencil lines
 uniform float u_pencilStrength;       // How strongly to darken pencil lines
-
-vec2 applyDistortion(vec2 coord, float distortion) {
-  vec2 centered = coord - 0.5; // Center the coordinates
-  float r = length(centered); // Distance from the center
-  vec2 distorted = centered * (1.0 + distortion * r * r); // Radial distortion
-  return distorted + 0.5; // Return to texture space
-}
 
 float luminance(vec3 color) {
   return dot(color, vec3(0.299, 0.587, 0.114));
@@ -136,8 +128,7 @@ vec4 applyOverlay(vec4 videoColor) {
 }
 
 void main() {
-  vec2 distortedCoord = applyDistortion(v_texCoord, u_distortion);
-  vec4 videoColor = u_enhancePencil ? enhancePencil(distortedCoord) : texture2D(u_texture, distortedCoord);
+  vec4 videoColor = u_enhancePencil ? enhancePencil(v_texCoord) : texture2D(u_texture, v_texCoord);
 
   if (u_hasOverlay) {
     gl_FragColor = applyOverlay(videoColor);

@@ -78,7 +78,6 @@ const UNIFORM_NAMES = [
   "u_opacity",
   "u_canvasResolution",
   "u_overlayResolution",
-  "u_distortion",
   "u_overlayMode",
   "u_edgeThreshold",
   "u_hasOverlay",
@@ -97,7 +96,7 @@ function bindAttribute(gl, program, name, values) {
 export function setupRender(
   video,
   gl,
-  { getDistortion, getOverlaySettings, getPencilSettings, getIsFrozen }
+  { getOverlaySettings, getPencilSettings, getIsFrozen }
 ) {
   const canvas = document.getElementById("webglCanvas");
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
@@ -155,7 +154,6 @@ export function setupRender(
 
       gl.uniform2f(uniforms.u_canvasResolution, canvas.width, canvas.height);
       gl.uniform1i(uniforms.u_hasOverlay, hasOverlay ? 1 : 0);
-      gl.uniform1f(uniforms.u_distortion, getDistortion());
       gl.uniform1i(uniforms.u_enhancePencil, enhancePencil ? 1 : 0);
       gl.uniform1f(uniforms.u_pencilStrength, pencilStrength);
 

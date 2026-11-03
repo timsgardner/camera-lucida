@@ -37,6 +37,16 @@ body, html {
   gap: 5px; /* Space between label and input */
 }
 
+.camera-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-group[hidden] {
+  display: none;
+}
+
 .control-group label {
   display: flex;
   align-items: center;
@@ -49,7 +59,8 @@ body, html {
   color: #333;
 }
 
-button#startCameraButton {
+button#startCameraButton,
+button#chooseOverlayButton {
   padding: 8px 15px;
   font-size: 14px;
   background-color: #007bff;
@@ -60,7 +71,8 @@ button#startCameraButton {
   transition: background-color 0.3s;
 }
 
-button#startCameraButton:hover {
+button#startCameraButton:hover,
+button#chooseOverlayButton:hover {
   background-color: #0056b3;
 }
 
@@ -101,12 +113,6 @@ button#startCameraButton:hover {
   max-width: 100%; /* Prevent horizontal overflow */
   max-height: 100%; /* Prevent vertical overflow */
   object-fit: contain; /* Ensure aspect ratio is maintained */
-}
-
-.control-group input[type="number"] {
-  width: 60px;
-  margin-left: 5px;
-  text-align: right;
 }
 
 .control-group select {
@@ -160,6 +166,7 @@ button#startCameraButton:hover {
     max-height: calc(100dvh - 84px);
     overflow-y: auto;
     flex-direction: column;
+    flex-wrap: nowrap; /* Scroll when short instead of wrapping into a clipped column */
     align-items: stretch;
     gap: 18px;
     padding: 20px;
@@ -172,6 +179,30 @@ button#startCameraButton:hover {
 
   .controls.is-open {
     display: flex;
+  }
+
+  .controls > * {
+    flex-shrink: 0;
+  }
+
+  /* Keep the camera controls above the fold, right under the header */
+  .controls-header {
+    order: -2;
+  }
+
+  .camera-row,
+  #cameraStatus {
+    order: -1;
+  }
+
+  /* The picker gives up width so the button label always fits */
+  .camera-row {
+    align-items: flex-end;
+  }
+
+  .camera-group {
+    flex: 1;
+    min-width: 0;
   }
 
   .controls-header {
@@ -203,7 +234,6 @@ button#startCameraButton:hover {
     font-size: 16px;
   }
 
-  .control-group input[type="file"],
   .control-group input[type="range"],
   .control-group select {
     width: 100%;
@@ -215,21 +245,20 @@ button#startCameraButton:hover {
     min-height: 36px;
   }
 
-  .control-group input[type="number"] {
-    width: 100%;
-    margin-left: 0;
-    min-height: 44px;
-    box-sizing: border-box;
-    font-size: 16px;
-  }
-
   .control-group select {
     min-height: 44px;
     font-size: 16px;
   }
 
   button#startCameraButton {
-    min-height: 48px;
+    flex-shrink: 0;
+    min-height: 44px;
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  button#chooseOverlayButton {
+    min-height: 44px;
     font-size: 16px;
   }
 

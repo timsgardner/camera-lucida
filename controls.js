@@ -27,63 +27,18 @@ export function setupControlMenu() {
   });
 }
 
-export function setupDistortionSlider() {
-  const slider = document.getElementById("distortionSlider");
-  const input = document.getElementById("distortionValue");
-
-  let distortion = parseFloat(slider.value);
-
-  function updateDistortion(value) {
-    distortion = value;
-    slider.value = value; // Sync the slider
-    input.value = value; // Sync the input field
-  }
-
-  // Handle slider input
-  slider.addEventListener("input", (event) => {
-    const value = parseFloat(event.target.value);
-    updateDistortion(value);
-  });
-
-  // Handle input field interactions
-  input.addEventListener("blur", () => {
-    // Update the distortion when the user leaves the input field
-    let value = parseFloat(input.value);
-    const min = parseFloat(input.min);
-    const max = parseFloat(input.max);
-
-    if (isNaN(value)) {
-      value = distortion; // Revert to the current distortion if input is invalid
-    } else {
-      // Clamp the value to the slider's range
-      if (value < min) value = min;
-      if (value > max) value = max;
-    }
-
-    updateDistortion(value);
-  });
-
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      // Handle updates when pressing Enter
-      input.blur(); // Trigger the blur handler to update the value
-    }
-  });
-
-  return () => distortion;
-}
-
 export function setupPencilEnhance() {
   const pencilToggle = document.getElementById("pencilToggle");
+  const pencilStrengthGroup = document.getElementById("pencilStrengthGroup");
   const pencilStrengthSlider = document.getElementById("pencilStrengthSlider");
 
   let enhancePencil = pencilToggle.checked;
   let pencilStrength = parseFloat(pencilStrengthSlider.value);
-  pencilStrengthSlider.disabled = !enhancePencil;
+  pencilStrengthGroup.hidden = !enhancePencil;
 
   pencilToggle.addEventListener("change", (event) => {
     enhancePencil = event.target.checked;
-    pencilStrengthSlider.disabled = !enhancePencil;
+    pencilStrengthGroup.hidden = !enhancePencil;
   });
 
   pencilStrengthSlider.addEventListener("input", (event) => {
@@ -118,8 +73,10 @@ export function setupFreeze(video) {
 
 export function setupImageOverlay(gl) {
   const imageInput = document.getElementById("imageInput");
+  const chooseOverlayButton = document.getElementById("chooseOverlayButton");
   const opacitySlider = document.getElementById("opacitySlider");
   const overlayModeSelect = document.getElementById("overlayModeSelect");
+  const edgeThresholdGroup = document.getElementById("edgeThresholdGroup");
   const edgeThresholdSlider = document.getElementById("edgeThresholdSlider");
 
   let imageTexture = null;
@@ -130,7 +87,7 @@ export function setupImageOverlay(gl) {
 
   function updateOverlayMode() {
     overlayMode = OVERLAY_MODES[overlayModeSelect.value];
-    edgeThresholdSlider.disabled = overlayMode !== OVERLAY_MODES.edges;
+    edgeThresholdGroup.hidden = overlayMode !== OVERLAY_MODES.edges;
   }
 
   updateOverlayMode();
@@ -146,6 +103,8 @@ export function setupImageOverlay(gl) {
   edgeThresholdSlider.addEventListener("input", (event) => {
     edgeThreshold = parseFloat(event.target.value);
   });
+
+  chooseOverlayButton.addEventListener("click", () => imageInput.click());
 
   // Handle image uploads
   imageInput.addEventListener("change", (event) => {

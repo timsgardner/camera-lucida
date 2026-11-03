@@ -1,7 +1,6 @@
 import { initializeVideo, setupCameraButton } from "./camera.js";
 import {
   setupControlMenu,
-  setupDistortionSlider,
   setupFreeze,
   setupImageOverlay,
   setupPencilEnhance,
@@ -16,11 +15,13 @@ if (gl) {
 
   setupControlMenu();
   setupCameraButton(video);
-  window.addEventListener("resize", () => updateCanvasSize(video, gl));
+  // Also catches the control bar changing height as controls show and hide
+  new ResizeObserver(() => updateCanvasSize(video, gl)).observe(
+    document.getElementById("canvasContainer")
+  );
   video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));
 
   setupRender(video, gl, {
-    getDistortion: setupDistortionSlider(),
     getOverlaySettings: setupImageOverlay(gl),
     getPencilSettings: setupPencilEnhance(),
     getIsFrozen: setupFreeze(video),
