@@ -1,5 +1,7 @@
 import { fragmentShaderSource, vertexShaderSource } from "./shaders.js";
 
+const MAX_PIXEL_RATIO = 2;
+
 export function showFatalError(message) {
   document.getElementById("canvasContainer").textContent = message;
 }
@@ -25,8 +27,10 @@ export function updateCanvasSize(video, gl) {
     canvasHeight = canvasWidth / videoAspectRatio;
   }
 
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
+  // Render at device resolution, capped to limit GPU work on high-density phones
+  const pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+  canvas.width = Math.floor(canvasWidth * pixelRatio);
+  canvas.height = Math.floor(canvasHeight * pixelRatio);
   canvas.style.width = `${canvasWidth}px`;
   canvas.style.height = `${canvasHeight}px`;
 
