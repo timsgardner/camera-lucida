@@ -179,12 +179,40 @@ uniform float u_distortion;           // Distortion strength
 uniform int u_overlayMode;            // 0: normal, 1: inverse alpha mask, 2: edges
 uniform float u_edgeThreshold;        // Minimum gradient that counts as an edge
 uniform bool u_hasOverlay;            // Whether an overlay is active
+uniform bool u_enhancePencil;         // Whether to bring out faint pencil lines
+uniform float u_pencilStrength;       // How strongly to darken pencil lines
 
 vec2 applyDistortion(vec2 coord, float distortion) {
   vec2 centered = coord - 0.5; // Center the coordinates
   float r = length(centered); // Distance from the center
   vec2 distorted = centered * (1.0 + distortion * r * r); // Radial distortion
   return distorted + 0.5; // Return to texture space
+}
+
+float videoLuminance(vec2 coord) {
+  vec4 color = texture2D(u_texture, coord);
+  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+}
+
+// Average video brightness in a wide disc around coord, spiralling out from the center
+float paperBrightness(vec2 coord) {
+  vec2 radius = 0.05 * vec2(u_canvasResolution.y / u_canvasResolution.x, 1.0);
+  float total = 0.0;
+
+  for (int i = 0; i < 16; i++) {
+    float angle = float(i) * 2.4; // Golden angle spreads samples evenly
+    float sampleDistance = sqrt((float(i) + 0.5) / 16.0);
+    total += videoLuminance(coord + radius * sampleDistance * vec2(cos(angle), sin(angle)));
+  }
+
+  return total / 16.0;
+}
+
+// Flatten the lighting so paper is white, then darken whatever is darker than the paper
+vec4 enhancePencil(vec2 coord) {
+  float ratio = videoLuminance(coord) / max(paperBrightness(coord), 0.01);
+  float darkness = max(1.0 - ratio - 0.02, 0.0); // Small dead zone hides paper grain
+  return vec4(vec3(1.0 - min(darkness * u_pencilStrength, 1.0)), 1.0);
 }
 
 float overlayLuminance(vec2 coord) {
@@ -212,7 +240,7 @@ float overlayEdgeStrength(vec2 coord, vec2 texel) {
 void main() {
   // Apply distortion to the video texture coordinates
   vec2 distortedCoord = applyDistortion(v_texCoord, u_distortion);
-  vec4 videoColor = texture2D(u_texture, distortedCoord);
+  vec4 videoColor = u_enhancePencil ? enhancePencil(distortedCoord) : texture2D(u_texture, distortedCoord);
 
   vec4 blendedColor = videoColor; // Default to videoColor if no overlay
 
@@ -301,7 +329,13 @@ function createProgram(gl, vertexShader, fragmentShader) {
   return program;
 }
 
-function setupRender(video, gl, getDistortion, getOverlaySettings) {
+function setupRender(
+  video,
+  gl,
+  getDistortion,
+  getOverlaySettings,
+  getPencilSettings
+) {
   const canvas = document.getElementById("webglCanvas");
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
   const fragmentShader = createShader(
@@ -334,6 +368,14 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
     "u_edgeThreshold"
   );
   const hasOverlayLocation = gl.getUniformLocation(program, "u_hasOverlay");
+  const enhancePencilLocation = gl.getUniformLocation(
+    program,
+    "u_enhancePencil"
+  );
+  const pencilStrengthLocation = gl.getUniformLocation(
+    program,
+    "u_pencilStrength"
+  );
 
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -389,6 +431,10 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
       gl.uniform2f(canvasResolutionLocation, canvas.width, canvas.height);
       gl.uniform1i(hasOverlayLocation, hasOverlay ? 1 : 0);
       gl.uniform1f(distortionLocation, getDistortion());
+
+      const { enhancePencil, pencilStrength } = getPencilSettings();
+      gl.uniform1i(enhancePencilLocation, enhancePencil ? 1 : 0);
+      gl.uniform1f(pencilStrengthLocation, pencilStrength);
 
       // Set overlay-specific uniforms if an overlay is active
       if (hasOverlay) {
@@ -468,6 +514,26 @@ function setupDistortionSlider(getDistortion, setDistortion) {
 
   // Initialize the input and slider with the current distortion value
   updateDistortion(getDistortion());
+}
+
+function setupPencilEnhance() {
+  const pencilToggle = document.getElementById("pencilToggle");
+  const pencilStrengthSlider = document.getElementById("pencilStrengthSlider");
+
+  let enhancePencil = pencilToggle.checked;
+  let pencilStrength = parseFloat(pencilStrengthSlider.value);
+  pencilStrengthSlider.disabled = !enhancePencil;
+
+  pencilToggle.addEventListener("change", (event) => {
+    enhancePencil = event.target.checked;
+    pencilStrengthSlider.disabled = !enhancePencil;
+  });
+
+  pencilStrengthSlider.addEventListener("input", (event) => {
+    pencilStrength = parseFloat(event.target.value);
+  });
+
+  return () => ({ enhancePencil, pencilStrength });
 }
 
 const EDGE_OVERLAY_MODE = 2; // Matches u_overlayMode in the fragment shader
@@ -565,6 +631,14 @@ document.addEventListener("DOMContentLoaded", () => {
     updateCanvasSize(video, gl); // Recalculate canvas if needed
   });
 
+  const getPencilSettings = setupPencilEnhance();
+
   // Setup WebGL rendering
-  setupRender(video, gl, () => distortion, getOverlaySettings);
+  setupRender(
+    video,
+    gl,
+    () => distortion,
+    getOverlaySettings,
+    getPencilSettings
+  );
 });
