@@ -32,7 +32,7 @@
           <span>Opacity:</span>
           <input
             type="range"
-            id="transparencySlider"
+            id="opacitySlider"
             min="0"
             max="1"
             step="0.01"
@@ -59,15 +59,14 @@
           max="0.2"
           step="0.001"
           value="0"
-          style="width: 60px"
         />
       </div>
       <div class="control-group">
         <label for="overlayModeSelect">Overlay Mode:</label>
         <select id="overlayModeSelect">
-          <option value="0">Normal</option>
-          <option value="1">Inverse Alpha Mask</option>
-          <option value="2">Edges</option>
+          <option value="normal">Normal</option>
+          <option value="inverseMask">Inverse Alpha Mask</option>
+          <option value="edges">Edges</option>
         </select>
       </div>
       <div class="control-group">
@@ -113,7 +112,7 @@
     </div>
 
     <!-- Video and canvas container -->
-    <div id="stuffContainer">
+    <div id="canvasContainer">
       <canvas id="webglCanvas"></canvas>
     </div>
 

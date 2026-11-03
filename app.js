@@ -122,11 +122,11 @@ function setupControlMenu() {
 }
 
 function showFatalError(message) {
-  document.getElementById("stuffContainer").textContent = message;
+  document.getElementById("canvasContainer").textContent = message;
 }
 
 function updateCanvasSize(video, gl) {
-  const container = document.getElementById("stuffContainer");
+  const container = document.getElementById("canvasContainer");
   const canvas = document.getElementById("webglCanvas");
   if (!video.videoWidth || !video.videoHeight) return;
 
@@ -166,6 +166,8 @@ const vertexShaderSource = `
     }
   `;
 
+const OVERLAY_MODES = { normal: 0, inverseMask: 1, edges: 2 };
+
 const fragmentShaderSource = `
 // Edge detection offsets by single texels, which mediump can't resolve on mobile
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -173,14 +175,19 @@ precision highp float;
 #else
 precision mediump float;
 #endif
+
+const int OVERLAY_MODE_INVERSE_MASK = ${OVERLAY_MODES.inverseMask};
+const int OVERLAY_MODE_EDGES = ${OVERLAY_MODES.edges};
+const vec3 TRACE_COLOR = vec3(0.0235, 0.2235, 0.4392); // Indigo blue #063970
+
 varying vec2 v_texCoord;
 uniform sampler2D u_texture;           // Video texture
 uniform sampler2D u_overlayTexture;   // Overlay image texture
-uniform float u_transparency;         // Transparency for blending
+uniform float u_opacity;              // Overlay opacity for blending
 uniform vec2 u_overlayResolution;     // Resolution of overlay texture
 uniform vec2 u_canvasResolution;      // Resolution of canvas
 uniform float u_distortion;           // Distortion strength
-uniform int u_overlayMode;            // 0: normal, 1: inverse alpha mask, 2: edges
+uniform int u_overlayMode;            // One of OVERLAY_MODES
 uniform float u_edgeThreshold;        // Minimum gradient that counts as an edge
 uniform bool u_hasOverlay;            // Whether an overlay is active
 uniform bool u_enhancePencil;         // Whether to bring out faint pencil lines
@@ -193,9 +200,12 @@ vec2 applyDistortion(vec2 coord, float distortion) {
   return distorted + 0.5; // Return to texture space
 }
 
+float luminance(vec3 color) {
+  return dot(color, vec3(0.299, 0.587, 0.114));
+}
+
 float videoLuminance(vec2 coord) {
-  vec4 color = texture2D(u_texture, coord);
-  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+  return luminance(texture2D(u_texture, coord).rgb);
 }
 
 // Average video brightness in a wide disc around coord, spiralling out from the center
@@ -221,8 +231,7 @@ vec4 enhancePencil(vec2 coord) {
 
 float overlayLuminance(vec2 coord) {
   vec4 color = texture2D(u_overlayTexture, coord);
-  float luminance = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
-  return mix(1.0, luminance, color.a); // Treat transparent pixels as white paper
+  return mix(1.0, luminance(color.rgb), color.a); // Treat transparent pixels as white paper
 }
 
 // Sobel gradient magnitude of the overlay at coord
@@ -241,72 +250,69 @@ float overlayEdgeStrength(vec2 coord, vec2 texel) {
   return length(vec2(gradientX, gradientY));
 }
 
+// Blend the overlay, fitted like "object-fit: contain", over videoColor
+vec4 applyOverlay(vec4 videoColor) {
+  float canvasAspect = u_canvasResolution.x / u_canvasResolution.y;
+  float overlayAspect = u_overlayResolution.x / u_overlayResolution.y;
+
+  vec2 scaleFactor = vec2(1.0);
+  vec2 offset = vec2(0.0);
+
+  if (canvasAspect > overlayAspect) {
+    // Canvas is wider than overlay
+    scaleFactor.x = overlayAspect / canvasAspect;
+    offset.x = (1.0 - scaleFactor.x) / 2.0;
+  } else {
+    // Canvas is taller than overlay
+    scaleFactor.y = canvasAspect / overlayAspect;
+    offset.y = (1.0 - scaleFactor.y) / 2.0;
+  }
+
+  vec2 overlayCoord = (v_texCoord - offset) / scaleFactor;
+
+  // No overlay contribution outside its bounds
+  if (overlayCoord.x < 0.0 || overlayCoord.x > 1.0 || overlayCoord.y < 0.0 || overlayCoord.y > 1.0) {
+    return videoColor;
+  }
+
+  vec4 overlayColor = texture2D(u_overlayTexture, overlayCoord);
+
+  if (u_overlayMode == OVERLAY_MODE_INVERSE_MASK) {
+    overlayColor.a = 1.0 - luminance(overlayColor.rgb); // Light areas are more transparent
+    overlayColor.rgb = TRACE_COLOR;
+  } else if (u_overlayMode == OVERLAY_MODE_EDGES) {
+    // Step by at least one screen pixel so downscaled overlays don't lose edges
+    vec2 texel = max(1.0 / u_overlayResolution, 1.0 / (u_canvasResolution * scaleFactor));
+    float edgeStrength = overlayEdgeStrength(overlayCoord, texel);
+
+    overlayColor.a = smoothstep(u_edgeThreshold, u_edgeThreshold + 0.1, edgeStrength);
+    overlayColor.rgb = TRACE_COLOR;
+  }
+
+  return mix(videoColor, overlayColor, overlayColor.a * u_opacity);
+}
+
 void main() {
-  // Apply distortion to the video texture coordinates
   vec2 distortedCoord = applyDistortion(v_texCoord, u_distortion);
   vec4 videoColor = u_enhancePencil ? enhancePencil(distortedCoord) : texture2D(u_texture, distortedCoord);
 
-  vec4 blendedColor = videoColor; // Default to videoColor if no overlay
-
   if (u_hasOverlay) {
-    // Aspect ratios
-    float canvasAspect = u_canvasResolution.x / u_canvasResolution.y;
-    float overlayAspect = u_overlayResolution.x / u_overlayResolution.y;
-
-    // Scale factor for "object-fit: contain"
-    vec2 scaleFactor = vec2(1.0);
-    vec2 offset = vec2(0.0);
-
-    if (canvasAspect > overlayAspect) {
-      // Canvas is wider than overlay
-      scaleFactor.x = overlayAspect / canvasAspect;
-      offset.x = (1.0 - scaleFactor.x) / 2.0;
-    } else {
-      // Canvas is taller than overlay
-      scaleFactor.y = canvasAspect / overlayAspect;
-      offset.y = (1.0 - scaleFactor.y) / 2.0;
-    }
-
-    // Scale and center the texture coordinates
-    vec2 adjustedCoord = (v_texCoord - offset) / scaleFactor;
-
-    // Clamp texture coordinates to avoid sampling outside the overlay
-    if (adjustedCoord.x < 0.0 || adjustedCoord.x > 1.0 || adjustedCoord.y < 0.0 || adjustedCoord.y > 1.0) {
-      gl_FragColor = videoColor; // No overlay contribution outside bounds
-      return;
-    }
-
-    // Sample the overlay texture
-    vec4 overlayColor = texture2D(u_overlayTexture, adjustedCoord);
-
-    // Compute luminance of the overlay color
-    float luminance = 0.299 * overlayColor.r + 0.587 * overlayColor.g + 0.114 * overlayColor.b;
-
-    // Apply inverse alpha mask using luminance
-    if (u_overlayMode == 1) {
-      overlayColor.a = 1.0 - luminance; // Light areas are more transparent
-
-      // Replace RGB with the indigo blue color #063970
-      overlayColor.rgb = vec3(0.0235, 0.2235, 0.4392);
-      // overlayColor.rgb = vec3(0,0,0);
-    } else if (u_overlayMode == 2) {
-      // Step by at least one screen pixel so downscaled overlays don't lose edges
-      vec2 texel = max(1.0 / u_overlayResolution, 1.0 / (u_canvasResolution * scaleFactor));
-      float edgeStrength = overlayEdgeStrength(adjustedCoord, texel);
-
-      overlayColor.a = smoothstep(u_edgeThreshold, u_edgeThreshold + 0.1, edgeStrength);
-      overlayColor.rgb = vec3(0.0235, 0.2235, 0.4392); // Indigo blue #063970
-    }
-
-    // Blend video and overlay using the computed alpha
-    blendedColor = mix(videoColor, overlayColor, overlayColor.a * u_transparency);
+    gl_FragColor = applyOverlay(videoColor);
+  } else {
+    gl_FragColor = videoColor;
   }
-
-  gl_FragColor = blendedColor;
 }
+`;
 
-
-  `;
+function createTexture(gl) {
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return texture;
+}
 
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
@@ -333,12 +339,32 @@ function createProgram(gl, vertexShader, fragmentShader) {
   return program;
 }
 
+const UNIFORM_NAMES = [
+  "u_texture",
+  "u_overlayTexture",
+  "u_opacity",
+  "u_canvasResolution",
+  "u_overlayResolution",
+  "u_distortion",
+  "u_overlayMode",
+  "u_edgeThreshold",
+  "u_hasOverlay",
+  "u_enhancePencil",
+  "u_pencilStrength",
+];
+
+function bindAttribute(gl, program, name, values) {
+  const location = gl.getAttribLocation(program, name);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(values), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(location);
+  gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
+}
+
 function setupRender(
   video,
   gl,
-  getDistortion,
-  getOverlaySettings,
-  getPencilSettings
+  { getDistortion, getOverlaySettings, getPencilSettings }
 ) {
   const canvas = document.getElementById("webglCanvas");
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
@@ -356,73 +382,28 @@ function setupRender(
     return;
   }
 
-  const positionLocation = gl.getAttribLocation(program, "a_position");
-  const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
-  const textureLocation = gl.getUniformLocation(program, "u_texture");
-  const overlayTextureLocation = gl.getUniformLocation(
-    program,
-    "u_overlayTexture"
-  );
-  const transparencyLocation = gl.getUniformLocation(program, "u_transparency");
-  const canvasResolutionLocation = gl.getUniformLocation(
-    program,
-    "u_canvasResolution"
-  );
-  const overlayResolutionLocation = gl.getUniformLocation(
-    program,
-    "u_overlayResolution"
-  );
-  const distortionLocation = gl.getUniformLocation(program, "u_distortion");
-  const overlayModeLocation = gl.getUniformLocation(program, "u_overlayMode");
-  const edgeThresholdLocation = gl.getUniformLocation(
-    program,
-    "u_edgeThreshold"
-  );
-  const hasOverlayLocation = gl.getUniformLocation(program, "u_hasOverlay");
-  const enhancePencilLocation = gl.getUniformLocation(
-    program,
-    "u_enhancePencil"
-  );
-  const pencilStrengthLocation = gl.getUniformLocation(
-    program,
-    "u_pencilStrength"
-  );
+  gl.useProgram(program);
 
-  const positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0]),
-    gl.STATIC_DRAW
+  const uniforms = Object.fromEntries(
+    UNIFORM_NAMES.map((name) => [name, gl.getUniformLocation(program, name)])
   );
+  gl.uniform1i(uniforms.u_texture, 0);
+  gl.uniform1i(uniforms.u_overlayTexture, 1);
 
-  const texCoordBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]),
-    gl.STATIC_DRAW
-  );
+  // Full-canvas quad
+  bindAttribute(gl, program, "a_position", [-1, -1, 1, -1, -1, 1, 1, 1]);
+  bindAttribute(gl, program, "a_texCoord", [0, 1, 1, 1, 0, 0, 1, 0]);
 
-  const videoTexture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.activeTexture(gl.TEXTURE0);
+  const videoTexture = createTexture(gl);
 
   function render() {
-    const {
-      imageTexture,
-      transparency,
-      overlayResolution,
-      overlayMode,
-      edgeThreshold,
-    } = getOverlaySettings();
-
-    const hasOverlay = Boolean(imageTexture);
-
     if (video.readyState >= 2) {
+      const { imageTexture, opacity, overlayResolution, overlayMode, edgeThreshold } =
+        getOverlaySettings();
+      const { enhancePencil, pencilStrength } = getPencilSettings();
+      const hasOverlay = Boolean(imageTexture);
+
       // Update the video texture
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
@@ -436,43 +417,27 @@ function setupRender(
       );
 
       gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.useProgram(program);
 
-      // Set common uniforms
-      gl.uniform1i(textureLocation, 0); // Video texture
-      gl.uniform2f(canvasResolutionLocation, canvas.width, canvas.height);
-      gl.uniform1i(hasOverlayLocation, hasOverlay ? 1 : 0);
-      gl.uniform1f(distortionLocation, getDistortion());
-
-      const { enhancePencil, pencilStrength } = getPencilSettings();
-      gl.uniform1i(enhancePencilLocation, enhancePencil ? 1 : 0);
-      gl.uniform1f(pencilStrengthLocation, pencilStrength);
+      gl.uniform2f(uniforms.u_canvasResolution, canvas.width, canvas.height);
+      gl.uniform1i(uniforms.u_hasOverlay, hasOverlay ? 1 : 0);
+      gl.uniform1f(uniforms.u_distortion, getDistortion());
+      gl.uniform1i(uniforms.u_enhancePencil, enhancePencil ? 1 : 0);
+      gl.uniform1f(uniforms.u_pencilStrength, pencilStrength);
 
       // Set overlay-specific uniforms if an overlay is active
       if (hasOverlay) {
         gl.uniform2f(
-          overlayResolutionLocation,
+          uniforms.u_overlayResolution,
           overlayResolution.width,
           overlayResolution.height
         );
-        gl.uniform1i(overlayModeLocation, overlayMode);
-        gl.uniform1f(edgeThresholdLocation, edgeThreshold);
-        gl.uniform1f(transparencyLocation, transparency);
+        gl.uniform1i(uniforms.u_overlayMode, overlayMode);
+        gl.uniform1f(uniforms.u_edgeThreshold, edgeThreshold);
+        gl.uniform1f(uniforms.u_opacity, opacity);
 
-        // Bind and activate the overlay texture
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, imageTexture);
-        gl.uniform1i(overlayTextureLocation, 1);
       }
-
-      // Draw the scene
-      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-      gl.enableVertexAttribArray(positionLocation);
-      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-      gl.enableVertexAttribArray(texCoordLocation);
-      gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
@@ -483,12 +448,14 @@ function setupRender(
   render();
 }
 
-function setupDistortionSlider(getDistortion, setDistortion) {
+function setupDistortionSlider() {
   const slider = document.getElementById("distortionSlider");
   const input = document.getElementById("distortionValue");
 
+  let distortion = parseFloat(slider.value);
+
   function updateDistortion(value) {
-    setDistortion(value); // Update the distortion value in the rendering logic
+    distortion = value;
     slider.value = value; // Sync the slider
     input.value = value; // Sync the input field
   }
@@ -507,7 +474,7 @@ function setupDistortionSlider(getDistortion, setDistortion) {
     const max = parseFloat(input.max);
 
     if (isNaN(value)) {
-      value = getDistortion(); // Revert to the current distortion if input is invalid
+      value = distortion; // Revert to the current distortion if input is invalid
     } else {
       // Clamp the value to the slider's range
       if (value < min) value = min;
@@ -524,8 +491,7 @@ function setupDistortionSlider(getDistortion, setDistortion) {
     }
   });
 
-  // Initialize the input and slider with the current distortion value
-  updateDistortion(getDistortion());
+  return () => distortion;
 }
 
 function setupPencilEnhance() {
@@ -548,31 +514,31 @@ function setupPencilEnhance() {
   return () => ({ enhancePencil, pencilStrength });
 }
 
-const EDGE_OVERLAY_MODE = 2; // Matches u_overlayMode in the fragment shader
-
 function setupImageOverlay(gl) {
   const imageInput = document.getElementById("imageInput");
-  const transparencySlider = document.getElementById("transparencySlider");
+  const opacitySlider = document.getElementById("opacitySlider");
   const overlayModeSelect = document.getElementById("overlayModeSelect");
   const edgeThresholdSlider = document.getElementById("edgeThresholdSlider");
 
   let imageTexture = null;
   let overlayResolution = { width: 1, height: 1 };
-  let transparency = parseFloat(transparencySlider.value);
-  let overlayMode = parseInt(overlayModeSelect.value, 10);
+  let opacity = parseFloat(opacitySlider.value);
+  let overlayMode;
   let edgeThreshold = parseFloat(edgeThresholdSlider.value);
-  edgeThresholdSlider.disabled = overlayMode !== EDGE_OVERLAY_MODE;
 
-  // Update transparency from slider
-  transparencySlider.addEventListener("input", (event) => {
-    transparency = parseFloat(event.target.value);
+  function updateOverlayMode() {
+    overlayMode = OVERLAY_MODES[overlayModeSelect.value];
+    edgeThresholdSlider.disabled = overlayMode !== OVERLAY_MODES.edges;
+  }
+
+  updateOverlayMode();
+
+  // Update opacity from slider
+  opacitySlider.addEventListener("input", (event) => {
+    opacity = parseFloat(event.target.value);
   });
 
-  // Update overlay mode
-  overlayModeSelect.addEventListener("change", (event) => {
-    overlayMode = parseInt(event.target.value, 10);
-    edgeThresholdSlider.disabled = overlayMode !== EDGE_OVERLAY_MODE;
-  });
+  overlayModeSelect.addEventListener("change", updateOverlayMode);
 
   // Update edge threshold from slider
   edgeThresholdSlider.addEventListener("input", (event) => {
@@ -594,13 +560,8 @@ function setupImageOverlay(gl) {
         gl.deleteTexture(imageTexture);
       }
 
-      imageTexture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+      imageTexture = createTexture(gl);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
       // Update overlay resolution
       overlayResolution = { width: img.width, height: img.height };
@@ -611,7 +572,7 @@ function setupImageOverlay(gl) {
   // Provide current overlay settings
   return () => ({
     imageTexture,
-    transparency,
+    opacity,
     overlayResolution,
     overlayMode,
     edgeThreshold,
@@ -633,27 +594,9 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("resize", () => updateCanvasSize(video, gl));
   video.addEventListener("loadedmetadata", () => updateCanvasSize(video, gl));
 
-  let distortion = 0.0;
-
-  // Setup distortion slider
-  setupDistortionSlider(
-    () => distortion, // Getter for the current distortion value
-    (value) => {
-      distortion = value;
-    } // Setter for updating the distortion value
-  );
-
-  // Setup image overlay
-  const getOverlaySettings = setupImageOverlay(gl);
-
-  const getPencilSettings = setupPencilEnhance();
-
-  // Setup WebGL rendering
-  setupRender(
-    video,
-    gl,
-    () => distortion,
-    getOverlaySettings,
-    getPencilSettings
-  );
+  setupRender(video, gl, {
+    getDistortion: setupDistortionSlider(),
+    getOverlaySettings: setupImageOverlay(gl),
+    getPencilSettings: setupPencilEnhance(),
+  });
 });
