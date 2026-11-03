@@ -163,7 +163,12 @@ const vertexShaderSource = `
   `;
 
 const fragmentShaderSource = `
+// Edge detection offsets by single texels, which mediump can't resolve on mobile
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 varying vec2 v_texCoord;
 uniform sampler2D u_texture;           // Video texture
 uniform sampler2D u_overlayTexture;   // Overlay image texture
@@ -171,7 +176,8 @@ uniform float u_transparency;         // Transparency for blending
 uniform vec2 u_overlayResolution;     // Resolution of overlay texture
 uniform vec2 u_canvasResolution;      // Resolution of canvas
 uniform float u_distortion;           // Distortion strength
-uniform bool u_applyAlphaMask;        // Whether to apply inverse alpha masking
+uniform int u_overlayMode;            // 0: normal, 1: inverse alpha mask, 2: edges
+uniform float u_edgeThreshold;        // Minimum gradient that counts as an edge
 uniform bool u_hasOverlay;            // Whether an overlay is active
 
 vec2 applyDistortion(vec2 coord, float distortion) {
@@ -179,6 +185,28 @@ vec2 applyDistortion(vec2 coord, float distortion) {
   float r = length(centered); // Distance from the center
   vec2 distorted = centered * (1.0 + distortion * r * r); // Radial distortion
   return distorted + 0.5; // Return to texture space
+}
+
+float overlayLuminance(vec2 coord) {
+  vec4 color = texture2D(u_overlayTexture, coord);
+  float luminance = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+  return mix(1.0, luminance, color.a); // Treat transparent pixels as white paper
+}
+
+// Sobel gradient magnitude of the overlay at coord
+float overlayEdgeStrength(vec2 coord, vec2 texel) {
+  float topLeft = overlayLuminance(coord + texel * vec2(-1.0, -1.0));
+  float top = overlayLuminance(coord + texel * vec2(0.0, -1.0));
+  float topRight = overlayLuminance(coord + texel * vec2(1.0, -1.0));
+  float left = overlayLuminance(coord + texel * vec2(-1.0, 0.0));
+  float right = overlayLuminance(coord + texel * vec2(1.0, 0.0));
+  float bottomLeft = overlayLuminance(coord + texel * vec2(-1.0, 1.0));
+  float bottom = overlayLuminance(coord + texel * vec2(0.0, 1.0));
+  float bottomRight = overlayLuminance(coord + texel * vec2(1.0, 1.0));
+
+  float gradientX = topRight + 2.0 * right + bottomRight - topLeft - 2.0 * left - bottomLeft;
+  float gradientY = bottomLeft + 2.0 * bottom + bottomRight - topLeft - 2.0 * top - topRight;
+  return length(vec2(gradientX, gradientY));
 }
 
 void main() {
@@ -223,12 +251,19 @@ void main() {
     float luminance = 0.299 * overlayColor.r + 0.587 * overlayColor.g + 0.114 * overlayColor.b;
 
     // Apply inverse alpha mask using luminance
-    if (u_applyAlphaMask) {
+    if (u_overlayMode == 1) {
       overlayColor.a = 1.0 - luminance; // Light areas are more transparent
 
       // Replace RGB with the indigo blue color #063970
       overlayColor.rgb = vec3(0.0235, 0.2235, 0.4392);
       // overlayColor.rgb = vec3(0,0,0);
+    } else if (u_overlayMode == 2) {
+      // Step by at least one screen pixel so downscaled overlays don't lose edges
+      vec2 texel = max(1.0 / u_overlayResolution, 1.0 / (u_canvasResolution * scaleFactor));
+      float edgeStrength = overlayEdgeStrength(adjustedCoord, texel);
+
+      overlayColor.a = smoothstep(u_edgeThreshold, u_edgeThreshold + 0.1, edgeStrength);
+      overlayColor.rgb = vec3(0.0235, 0.2235, 0.4392); // Indigo blue #063970
     }
 
     // Blend video and overlay using the computed alpha
@@ -293,7 +328,11 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
     "u_overlayResolution"
   );
   const distortionLocation = gl.getUniformLocation(program, "u_distortion");
-  const alphaMaskLocation = gl.getUniformLocation(program, "u_applyAlphaMask");
+  const overlayModeLocation = gl.getUniformLocation(program, "u_overlayMode");
+  const edgeThresholdLocation = gl.getUniformLocation(
+    program,
+    "u_edgeThreshold"
+  );
   const hasOverlayLocation = gl.getUniformLocation(program, "u_hasOverlay");
 
   const positionBuffer = gl.createBuffer();
@@ -320,8 +359,13 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   function render() {
-    const { imageTexture, transparency, overlayResolution, applyAlphaMask } =
-      getOverlaySettings();
+    const {
+      imageTexture,
+      transparency,
+      overlayResolution,
+      overlayMode,
+      edgeThreshold,
+    } = getOverlaySettings();
 
     const hasOverlay = Boolean(imageTexture);
 
@@ -353,7 +397,8 @@ function setupRender(video, gl, getDistortion, getOverlaySettings) {
           overlayResolution.width,
           overlayResolution.height
         );
-        gl.uniform1i(alphaMaskLocation, applyAlphaMask ? 1 : 0);
+        gl.uniform1i(overlayModeLocation, overlayMode);
+        gl.uniform1f(edgeThresholdLocation, edgeThreshold);
         gl.uniform1f(transparencyLocation, transparency);
 
         // Bind and activate the overlay texture
@@ -425,15 +470,20 @@ function setupDistortionSlider(getDistortion, setDistortion) {
   updateDistortion(getDistortion());
 }
 
+const EDGE_OVERLAY_MODE = 2; // Matches u_overlayMode in the fragment shader
+
 function setupImageOverlay(gl, updateRender) {
   const imageInput = document.getElementById("imageInput");
   const transparencySlider = document.getElementById("transparencySlider");
-  const alphaMaskToggle = document.getElementById("alphaMaskToggle");
+  const overlayModeSelect = document.getElementById("overlayModeSelect");
+  const edgeThresholdSlider = document.getElementById("edgeThresholdSlider");
 
   let imageTexture = null;
   let overlayResolution = { width: 1, height: 1 };
   let transparency = parseFloat(transparencySlider.value);
-  let applyAlphaMask = alphaMaskToggle.checked;
+  let overlayMode = parseInt(overlayModeSelect.value, 10);
+  let edgeThreshold = parseFloat(edgeThresholdSlider.value);
+  edgeThresholdSlider.disabled = overlayMode !== EDGE_OVERLAY_MODE;
 
   // Update transparency from slider
   transparencySlider.addEventListener("input", (event) => {
@@ -441,9 +491,16 @@ function setupImageOverlay(gl, updateRender) {
     updateRender(); // Trigger a re-render
   });
 
-  // Update alpha mask toggle
-  alphaMaskToggle.addEventListener("change", (event) => {
-    applyAlphaMask = event.target.checked;
+  // Update overlay mode
+  overlayModeSelect.addEventListener("change", (event) => {
+    overlayMode = parseInt(event.target.value, 10);
+    edgeThresholdSlider.disabled = overlayMode !== EDGE_OVERLAY_MODE;
+    updateRender(); // Trigger a re-render
+  });
+
+  // Update edge threshold from slider
+  edgeThresholdSlider.addEventListener("input", (event) => {
+    edgeThreshold = parseFloat(event.target.value);
     updateRender(); // Trigger a re-render
   });
 
@@ -478,7 +535,8 @@ function setupImageOverlay(gl, updateRender) {
     imageTexture,
     transparency,
     overlayResolution,
-    applyAlphaMask, // Ensure this is included
+    overlayMode,
+    edgeThreshold,
   });
 }
 
