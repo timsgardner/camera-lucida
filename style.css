@@ -76,6 +76,22 @@ button#startCameraButton:hover {
   box-sizing: border-box;
   flex-grow: 1;            /* Takes remaining space */
   overflow: hidden;
+  cursor: pointer; /* Tapping toggles freeze */
+  touch-action: manipulation; /* Keep quick taps from zooming */
+  -webkit-tap-highlight-color: transparent;
+}
+
+#frozenIndicator {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 65%);
+  color: white;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  pointer-events: none;
 }
 
 

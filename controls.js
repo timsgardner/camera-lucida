@@ -93,6 +93,29 @@ export function setupPencilEnhance() {
   return () => ({ enhancePencil, pencilStrength });
 }
 
+export function setupFreeze(video) {
+  const canvasContainer = document.getElementById("canvasContainer");
+  const frozenIndicator = document.getElementById("frozenIndicator");
+
+  let isFrozen = false;
+
+  function setFrozen(frozen) {
+    isFrozen = frozen;
+    frozenIndicator.hidden = !frozen;
+  }
+
+  canvasContainer.addEventListener("click", () => {
+    if (video.readyState >= 2) {
+      setFrozen(!isFrozen);
+    }
+  });
+
+  // Show a newly started camera straight away
+  video.addEventListener("play", () => setFrozen(false));
+
+  return () => isFrozen;
+}
+
 export function setupImageOverlay(gl) {
   const imageInput = document.getElementById("imageInput");
   const opacitySlider = document.getElementById("opacitySlider");

@@ -97,7 +97,7 @@ function bindAttribute(gl, program, name, values) {
 export function setupRender(
   video,
   gl,
-  { getDistortion, getOverlaySettings, getPencilSettings }
+  { getDistortion, getOverlaySettings, getPencilSettings, getIsFrozen }
 ) {
   const canvas = document.getElementById("webglCanvas");
   const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
@@ -137,17 +137,19 @@ export function setupRender(
       const { enhancePencil, pencilStrength } = getPencilSettings();
       const hasOverlay = Boolean(imageTexture);
 
-      // Update the video texture
+      // Update the video texture, keeping the last frame while frozen
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        video
-      );
+      if (!getIsFrozen()) {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          video
+        );
+      }
 
       gl.clear(gl.COLOR_BUFFER_BIT);
 
