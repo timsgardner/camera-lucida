@@ -121,6 +121,10 @@ function setupControlMenu() {
   });
 }
 
+function showFatalError(message) {
+  document.getElementById("stuffContainer").textContent = message;
+}
+
 function updateCanvasSize(video, gl) {
   const container = document.getElementById("stuffContainer");
   const canvas = document.getElementById("webglCanvas");
@@ -343,7 +347,14 @@ function setupRender(
     gl.FRAGMENT_SHADER,
     fragmentShaderSource
   );
-  const program = createProgram(gl, vertexShader, fragmentShader);
+  const program =
+    vertexShader &&
+    fragmentShader &&
+    createProgram(gl, vertexShader, fragmentShader);
+  if (!program) {
+    showFatalError("Could not compile the graphics shaders.");
+    return;
+  }
 
   const positionLocation = gl.getAttribLocation(program, "a_position");
   const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
@@ -413,6 +424,7 @@ function setupRender(
 
     if (video.readyState >= 2) {
       // Update the video texture
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, videoTexture);
       gl.texImage2D(
         gl.TEXTURE_2D,
@@ -468,7 +480,7 @@ function setupRender(
     requestAnimationFrame(render);
   }
 
-  video.addEventListener("play", render);
+  render();
 }
 
 function setupDistortionSlider(getDistortion, setDistortion) {
@@ -538,7 +550,7 @@ function setupPencilEnhance() {
 
 const EDGE_OVERLAY_MODE = 2; // Matches u_overlayMode in the fragment shader
 
-function setupImageOverlay(gl, updateRender) {
+function setupImageOverlay(gl) {
   const imageInput = document.getElementById("imageInput");
   const transparencySlider = document.getElementById("transparencySlider");
   const overlayModeSelect = document.getElementById("overlayModeSelect");
@@ -554,20 +566,17 @@ function setupImageOverlay(gl, updateRender) {
   // Update transparency from slider
   transparencySlider.addEventListener("input", (event) => {
     transparency = parseFloat(event.target.value);
-    updateRender(); // Trigger a re-render
   });
 
   // Update overlay mode
   overlayModeSelect.addEventListener("change", (event) => {
     overlayMode = parseInt(event.target.value, 10);
     edgeThresholdSlider.disabled = overlayMode !== EDGE_OVERLAY_MODE;
-    updateRender(); // Trigger a re-render
   });
 
   // Update edge threshold from slider
   edgeThresholdSlider.addEventListener("input", (event) => {
     edgeThreshold = parseFloat(event.target.value);
-    updateRender(); // Trigger a re-render
   });
 
   // Handle image uploads
@@ -575,8 +584,12 @@ function setupImageOverlay(gl, updateRender) {
     const file = event.target.files[0];
     if (!file) return;
 
+    const imageUrl = URL.createObjectURL(file);
     const img = new Image();
+    img.onerror = () => URL.revokeObjectURL(imageUrl);
     img.onload = () => {
+      URL.revokeObjectURL(imageUrl);
+
       if (imageTexture) {
         gl.deleteTexture(imageTexture);
       }
@@ -591,9 +604,8 @@ function setupImageOverlay(gl, updateRender) {
 
       // Update overlay resolution
       overlayResolution = { width: img.width, height: img.height };
-      updateRender(); // Trigger a re-render
     };
-    img.src = URL.createObjectURL(file);
+    img.src = imageUrl;
   });
 
   // Provide current overlay settings
@@ -609,6 +621,11 @@ function setupImageOverlay(gl, updateRender) {
 document.addEventListener("DOMContentLoaded", () => {
   const canvas = document.getElementById("webglCanvas");
   const gl = canvas.getContext("webgl");
+  if (!gl) {
+    showFatalError("This browser doesn't support WebGL.");
+    return;
+  }
+
   const video = initializeVideo();
 
   setupControlMenu();
@@ -627,9 +644,7 @@ document.addEventListener("DOMContentLoaded", () => {
   );
 
   // Setup image overlay
-  const getOverlaySettings = setupImageOverlay(gl, () => {
-    updateCanvasSize(video, gl); // Recalculate canvas if needed
-  });
+  const getOverlaySettings = setupImageOverlay(gl);
 
   const getPencilSettings = setupPencilEnhance();
 
